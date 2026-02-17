@@ -10,6 +10,8 @@ import {
     TrendingUp,
     Clock,
     Check,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react";
 import { useState } from "react";
 import type { AnalysisResult } from "@/lib/types";
@@ -67,24 +69,13 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function TaxBadge({ label, value }: { label: string; value: number }) {
-    let color = "var(--status-green)";
-    let bg = "rgba(34, 197, 94, 0.1)";
-    let icon = <ShieldCheck className="h-4 w-4" />;
-
-    if (value > 10) {
-        color = "var(--status-red)";
-        bg = "rgba(239, 68, 68, 0.1)";
-        icon = <ShieldAlert className="h-4 w-4" />;
-    } else if (value > 5) {
-        color = "var(--status-yellow)";
-        bg = "rgba(234, 179, 8, 0.1)";
-        icon = <Shield className="h-4 w-4" />;
-    }
+    const color = "var(--text-primary)";
+    const icon = <ShieldCheck className="h-4 w-4" />;
 
     return (
         <div
-            className="flex items-center gap-3 p-4 rounded-xl"
-            style={{ background: bg, border: `1px solid ${color}20` }}
+            className="flex items-center gap-3 p-4 rounded-xl border border-(--border-subtle)"
+            style={{ background: "var(--bg-secondary)" }}
         >
             <div style={{ color }}>{icon}</div>
             <div>
@@ -101,10 +92,17 @@ function TaxBadge({ label, value }: { label: string; value: number }) {
 
 export default function ResultsView({ result, onBack }: ResultsViewProps) {
     const [showAllFees, setShowAllFees] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
+
     const chain = CHAINS.find((c) => c.id === result.chain);
     const explorerUrl = chain?.explorerUrl || "https://basescan.org";
 
     const activeIncome = (showAllFees && result.allWalletIncome) ? result.allWalletIncome : result.feeIncome;
+    const allTxs = activeIncome.recentTxs.length > 0 ? activeIncome.recentTxs : (result.allWalletIncome?.recentTxs || []);
+
+    const totalPages = Math.ceil(allTxs.length / ITEMS_PER_PAGE);
+    const paginatedTxs = allTxs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
     return (
         <div className="w-full space-y-4 pt-4">
@@ -117,10 +115,10 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                 {result.token.name}
                             </h2>
                             <span
-                                className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold"
+                                className="px-2 py-0.5 rounded-md text-xs font-mono font-bold border border-(--border-subtle)"
                                 style={{
-                                    background: "rgba(34, 211, 238, 0.1)",
-                                    color: "var(--accent-primary)",
+                                    background: "var(--bg-secondary)",
+                                    color: "var(--text-primary)",
                                 }}
                             >
                                 ${result.token.symbol}
@@ -154,14 +152,10 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
 
                     <div className="text-right">
                         <span
-                            className="px-2.5 py-1 rounded-lg text-xs font-medium"
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold border border-(--border-subtle)"
                             style={{
-                                background: result.contractVerified
-                                    ? "rgba(34, 197, 94, 0.1)"
-                                    : "rgba(234, 179, 8, 0.1)",
-                                color: result.contractVerified
-                                    ? "var(--status-green)"
-                                    : "var(--status-yellow)",
+                                background: "var(--bg-secondary)",
+                                color: "var(--text-primary)",
                             }}
                         >
                             {result.contractVerified ? "✓ Verified" : "⚠ Unverified"}
@@ -231,92 +225,94 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
             </div>
 
             {/* ── Fee View Toggle ──────────────────────── */}
-            <div className="flex justify-center mb-2">
-                <div className="glass-card p-1 flex gap-1 rounded-xl">
-                    <button
-                        onClick={() => setShowAllFees(false)}
-                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${!showAllFees
-                            ? "bg-white/10 text-white shadow-lg"
-                            : "text-white/40 hover:text-white/70"
-                            }`}
-                    >
-                        Unclaimed Fees
-                    </button>
-                    <button
-                        onClick={() => setShowAllFees(true)}
-                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${showAllFees
-                            ? "bg-white/10 text-white shadow-lg"
-                            : "text-white/40 hover:text-white/70"
-                            }`}
-                    >
-                        All Claimed Fees
-                    </button>
-                </div>
-            </div>
-
-            {/* ── Hero metric: Total Potential Fees ─────────────── */}
-            <div className="glass-card glow-border p-6 text-center animate-pulse-glow">
-                <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
-                    <TrendingUp className="inline h-4 w-4 mr-1" />
-                    {showAllFees ? (
-                        "Total Fees Earned by Creator (All Tokens)"
-                    ) : (
-                        (parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) > 0
-                            ? (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator")
-                            : (activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
-                                ? "Unclaimed Fees (Current Token)"
-                                : (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator"))
-                    )}
-                </p>
-                <p className="text-4xl font-bold gradient-text mb-1">
-                    {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "ETH"}
-                    {(parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) === 0 && activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
-                        <span className="text-sm align-middle ml-2" style={{ color: "var(--text-accent)" }}>
-                            + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol}
-                        </span>
-                    )}
-                </p>
-                {(activeIncome.totalUsd || activeIncome.unclaimedUsd) && (parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")) > 0 && (
-                    <p className="text-lg font-medium" style={{ color: "var(--text-secondary)" }}>
-                        ≈ ${(parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                )}
-                <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
-                    {activeIncome.txCount > 0 ? (
-                        `Across ${activeIncome.txCount} transaction${activeIncome.txCount !== 1 ? "s" : ""}`
-                    ) : (
-                        activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
-                            ? "Current token rewards listed below"
-                            : "No recent transactions found"
-                    )}
-                </p>
-
-                {/* Claimed/Unclaimed Breakdown */}
-                {activeIncome.unclaimedEth && parseFloat(activeIncome.unclaimedEth) > 0 && (
-                    <div className="mt-6 pt-6 border-t border-white/5 grid grid-cols-2 gap-4">
-                        <div className="text-left">
-                            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
-                                Claimed
-                            </p>
-                            <p className="text-lg font-bold" style={{ color: "var(--text-secondary)" }}>
-                                {formatNumber(activeIncome.totalEth)} {chain?.nativeSymbol}
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--accent-primary)" }}>
-                                Available in Locker
-                            </p>
-                            <p className="text-lg font-bold" style={{ color: "var(--accent-primary)" }}>
-                                {formatNumber(activeIncome.unclaimedEth)} {chain?.nativeSymbol}
-                            </p>
-                            {activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
-                                <p className="text-xs font-semibold opacity-80" style={{ color: "var(--accent-primary)" }}>
-                                    + {formatNumber(activeIncome.unclaimedTokenAmount)} {activeIncome.tokenSymbol || "TOKENS"}
-                                </p>
-                            )}
-                        </div>
+            <div>
+                <div className="flex justify-center">
+                    <div className="glass-card p-1 flex gap-1">
+                        <button
+                            onClick={() => setShowAllFees(false)}
+                            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${!showAllFees
+                                ? "bg-accent-primary text-bg-primary shadow-sm"
+                                : "text-text-muted hover:text-text-primary"
+                                }`}
+                        >
+                            Unclaimed Fees
+                        </button>
+                        <button
+                            onClick={() => setShowAllFees(true)}
+                            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${showAllFees
+                                ? "bg-accent-primary text-bg-primary shadow-sm"
+                                : "text-text-muted hover:text-text-primary"
+                                }`}
+                        >
+                            All Claimed Fees
+                        </button>
                     </div>
-                )}
+                </div>
+
+                {/* ── Hero metric: Total Potential Fees ─────────────── */}
+                <div className="glass-card p-8 text-center border-2 border-(--border-strong)">
+                    <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
+                        <TrendingUp className="inline h-4 w-4 mr-1" />
+                        {showAllFees ? (
+                            "Total Fees Earned by Creator (All Tokens)"
+                        ) : (
+                            (parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) > 0
+                                ? (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator")
+                                : (activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
+                                    ? "Unclaimed Fees (Current Token)"
+                                    : (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator"))
+                        )}
+                    </p>
+                    <p className="text-4xl font-bold gradient-text mb-1">
+                        {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "ETH"}
+                        {(parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) === 0 && activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
+                            <span className="text-sm align-middle ml-2" style={{ color: "var(--status-green)" }}>
+                                + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol}
+                            </span>
+                        )}
+                    </p>
+                    {(activeIncome.totalUsd || activeIncome.unclaimedUsd) && (parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")) > 0 && (
+                        <p className="text-lg font-medium" style={{ color: "var(--text-secondary)" }}>
+                            ≈ ${(parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                    )}
+                    <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                        {activeIncome.txCount > 0 ? (
+                            `Across ${activeIncome.txCount} transaction${activeIncome.txCount !== 1 ? "s" : ""}`
+                        ) : (
+                            activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
+                                ? "Current token rewards listed below"
+                                : "No recent transactions found"
+                        )}
+                    </p>
+
+                    {/* Claimed/Unclaimed Breakdown */}
+                    {activeIncome.unclaimedEth && parseFloat(activeIncome.unclaimedEth) > 0 && (
+                        <div className="mt-6 pt-6 border-t border-(--border-subtle) grid grid-cols-2 gap-4">
+                            <div className="text-left">
+                                <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
+                                    Claimed
+                                </p>
+                                <p className="text-lg font-bold" style={{ color: "var(--text-secondary)" }}>
+                                    {formatNumber(activeIncome.totalEth)} {chain?.nativeSymbol}
+                                </p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
+                                    Available in Locker
+                                </p>
+                                <p className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+                                    {formatNumber(activeIncome.unclaimedEth)} {chain?.nativeSymbol}
+                                </p>
+                                {activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
+                                    <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+                                        + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol || "TOKENS"}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* ── Tax Rates ──────────────────────────── */}
@@ -346,10 +342,10 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                             >
                                 <div className="flex items-center gap-3">
                                     <span
-                                        className="px-2 py-0.5 rounded text-xs font-medium"
+                                        className="px-2 py-0.5 rounded text-xs font-bold border border-(--border-subtle)"
                                         style={{
-                                            background: "rgba(34, 211, 238, 0.1)",
-                                            color: "var(--accent-primary)",
+                                            background: "var(--bg-primary)",
+                                            color: "var(--text-primary)",
                                         }}
                                     >
                                         {wallet.label}
@@ -409,17 +405,17 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(activeIncome.recentTxs.length > 0 ? activeIncome.recentTxs : (result.allWalletIncome?.recentTxs || [])).map((tx, i) => (
+                                {paginatedTxs.map((tx, i) => (
                                     <tr
                                         key={i}
-                                        style={{ borderTop: "1px solid var(--border-subtle)" }}
+                                        className="border-t border-(--border-subtle) hover:bg-bg-secondary transition-colors"
                                     >
                                         <td className="py-2.5 pr-4">
                                             <a
                                                 href={`${explorerUrl}/tx/${tx.hash}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="font-mono transition-colors"
+                                                className="font-mono transition-colors underline"
                                                 style={{ color: "var(--accent-primary)" }}
                                             >
                                                 {truncateAddress(tx.hash)}
@@ -448,6 +444,47 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t border-(--border-subtle)">
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                Showing <span className="text-text-primary font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="text-text-primary font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, allTxs.length)}</span> of <span className="text-text-primary font-medium">{allTxs.length}</span> transactions
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="p-1.5 rounded-lg border border-(--border-subtle) transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bg-secondary"
+                                    aria-label="Previous page"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                        <button
+                                            key={page}
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`w-8 h-8 rounded-lg text-xs font-medium transition-all cursor-pointer border ${currentPage === page
+                                                ? "bg-accent-primary text-bg-primary border-accent-primary"
+                                                : "border-(--border-subtle) text-text-muted hover:text-text-primary hover:bg-bg-secondary"
+                                                }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="p-1.5 rounded-lg border border-(--border-subtle) transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bg-secondary"
+                                    aria-label="Next page"
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

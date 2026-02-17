@@ -784,7 +784,7 @@ export async function getFeeWalletIncome(
     unclaimedTokenAmount: unclaimedResult.unclaimedTokenAmount,
     tokenSymbol: unclaimedResult.tokenSymbol,
     txCount: allTxs.length,
-    recentTxs: allTxs.slice(0, 10),
+    recentTxs: allTxs.slice(0, 500),
   };
 }
 
@@ -836,7 +836,7 @@ async function calculateCombinedIncome(
     unclaimedTokenAmount: incomes[0]?.unclaimedTokenAmount, // Use the first wallet's token rewards as primary
     tokenSymbol: incomes[0]?.tokenSymbol,
     txCount: totalTxCount,
-    recentTxs: allRecentTxs.slice(0, 10),
+    recentTxs: allRecentTxs.slice(0, 500),
   };
 }
 

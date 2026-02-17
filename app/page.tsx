@@ -7,6 +7,7 @@ import SearchBar from "@/components/SearchBar";
 import ResultsView from "@/components/ResultsView";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import type { AnalysisResult, AnalysisError } from "@/lib/types";
+import Image from "next/image";
 
 // Example token on Base — a known taxed token for demo
 const EXAMPLE_ADDRESS = "0xF35452565ABe5c1A81C8faA35169a754732b5B07";
@@ -61,10 +62,11 @@ export default function Home() {
         className="text-center w-full max-w-2xl mb-8"
       >
         <div className="flex items-center justify-center gap-3 mb-4">
-          <Dog
+          {/* <Dog
             className="h-12 w-12"
             style={{ color: "var(--accent-primary)" }}
-          />
+          /> */}
+          <Image src="/logo.gif" height={100} width={100} alt="" className="rounded-xl" />
         </div>
         <h1 className="text-5xl sm:text-6xl font-bold mb-3 gradient-text">
           FeeSniff
@@ -136,10 +138,9 @@ export default function Home() {
               className="mt-6"
             >
               <div
-                className="px-5 py-3 rounded-xl text-sm text-center"
+                className="px-5 py-3 rounded-xl text-sm text-center border border-(--border-subtle)"
                 style={{
-                  background: "rgba(239, 68, 68, 0.1)",
-                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  background: "var(--bg-secondary)",
                   color: "var(--status-red)",
                 }}
               >
@@ -158,8 +159,8 @@ export default function Home() {
             >
               {[
                 {
-                  title: "Detect Tax Rates",
-                  desc: "Instantly see buy/sell tax percentages from the contract",
+                  title: "Track Withdrawals",
+                  desc: "See all fee withdrawals and transfers",
                 },
                 {
                   title: "Find Fee Wallets",
