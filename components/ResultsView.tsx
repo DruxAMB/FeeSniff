@@ -1,0 +1,455 @@
+"use client";
+
+import {
+    Copy,
+    ExternalLink,
+    Shield,
+    ShieldAlert,
+    ShieldCheck,
+    Wallet,
+    TrendingUp,
+    Clock,
+    Check,
+} from "lucide-react";
+import { useState } from "react";
+import type { AnalysisResult } from "@/lib/types";
+import { CHAINS } from "@/lib/chains";
+
+type ResultsViewProps = {
+    result: AnalysisResult;
+    onBack: () => void;
+};
+
+function truncateAddress(addr: string): string {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
+function formatNumber(val: string | number): string {
+    const num = typeof val === "string" ? parseFloat(val) : val;
+    if (isNaN(num)) return "0";
+    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
+    if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`;
+    if (num < 0.0001 && num > 0) return num.toExponential(2);
+    return num.toFixed(4);
+}
+
+function timeAgo(timestamp: number): string {
+    const diff = Math.floor(Date.now() / 1000 - timestamp);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // Clipboard not available
+        }
+    };
+
+    return (
+        <button
+            onClick={handleCopy}
+            className="p-1 rounded transition-colors cursor-pointer"
+            style={{ color: copied ? "var(--status-green)" : "var(--text-muted)" }}
+            title="Copy address"
+        >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+    );
+}
+
+function TaxBadge({ label, value }: { label: string; value: number }) {
+    let color = "var(--status-green)";
+    let bg = "rgba(34, 197, 94, 0.1)";
+    let icon = <ShieldCheck className="h-4 w-4" />;
+
+    if (value > 10) {
+        color = "var(--status-red)";
+        bg = "rgba(239, 68, 68, 0.1)";
+        icon = <ShieldAlert className="h-4 w-4" />;
+    } else if (value > 5) {
+        color = "var(--status-yellow)";
+        bg = "rgba(234, 179, 8, 0.1)";
+        icon = <Shield className="h-4 w-4" />;
+    }
+
+    return (
+        <div
+            className="flex items-center gap-3 p-4 rounded-xl"
+            style={{ background: bg, border: `1px solid ${color}20` }}
+        >
+            <div style={{ color }}>{icon}</div>
+            <div>
+                <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                    {label}
+                </p>
+                <p className="text-xl font-bold" style={{ color }}>
+                    {value}%
+                </p>
+            </div>
+        </div>
+    );
+}
+
+export default function ResultsView({ result, onBack }: ResultsViewProps) {
+    const [showAllFees, setShowAllFees] = useState(false);
+    const chain = CHAINS.find((c) => c.id === result.chain);
+    const explorerUrl = chain?.explorerUrl || "https://basescan.org";
+
+    const activeIncome = (showAllFees && result.allWalletIncome) ? result.allWalletIncome : result.feeIncome;
+
+    return (
+        <div className="w-full space-y-4 pt-4">
+            {/* ── Token header ────────────────────────── */}
+            <div className="glass-card p-6">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                        <div className="flex items-center gap-3 mb-1">
+                            <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+                                {result.token.name}
+                            </h2>
+                            <span
+                                className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold"
+                                style={{
+                                    background: "rgba(34, 211, 238, 0.1)",
+                                    color: "var(--accent-primary)",
+                                }}
+                            >
+                                ${result.token.symbol}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                            <span className="font-mono">{truncateAddress(result.contractAddress)}</span>
+                            <CopyButton text={result.contractAddress} />
+                            <a
+                                href={`${explorerUrl}/address/${result.contractAddress}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                            >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                            {chain && (
+                                <span
+                                    className="px-2 py-0.5 rounded text-xs"
+                                    style={{
+                                        background: "var(--bg-secondary)",
+                                        color: "var(--text-secondary)",
+                                    }}
+                                >
+                                    {chain.icon} {chain.name}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="text-right">
+                        <span
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium"
+                            style={{
+                                background: result.contractVerified
+                                    ? "rgba(34, 197, 94, 0.1)"
+                                    : "rgba(234, 179, 8, 0.1)",
+                                color: result.contractVerified
+                                    ? "var(--status-green)"
+                                    : "var(--status-yellow)",
+                            }}
+                        >
+                            {result.contractVerified ? "✓ Verified" : "⚠ Unverified"}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Token details */}
+                <div
+                    className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4 pt-4"
+                    style={{ borderTop: "1px solid var(--border-subtle)" }}
+                >
+                    <div>
+                        <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                            Total Supply
+                        </p>
+                        <p className="text-sm font-mono font-medium" style={{ color: "var(--text-secondary)" }}>
+                            {formatNumber(result.token.totalSupply)}
+                        </p>
+                    </div>
+                    {result.token.deployer && (
+                        <div>
+                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                                Deployer
+                            </p>
+                            <div className="flex items-center gap-1">
+                                <p
+                                    className="text-sm font-mono font-medium"
+                                    style={{ color: "var(--text-secondary)" }}
+                                >
+                                    {truncateAddress(result.token.deployer)}
+                                </p>
+                                <CopyButton text={result.token.deployer} />
+                            </div>
+                        </div>
+                    )}
+                    {result.token.deployedAt && (
+                        <div>
+                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                                Deployed
+                            </p>
+                            <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+                                {new Date(result.token.deployedAt).toLocaleDateString()}
+                            </p>
+                        </div>
+                    )}
+                    {result.poolAddress && (
+                        <div>
+                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                                LP Pool
+                            </p>
+                            <div className="flex items-center gap-1">
+                                <a
+                                    href={`${explorerUrl}/address/${result.poolAddress}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm font-mono font-medium transition-colors"
+                                    style={{ color: "var(--accent-primary)" }}
+                                >
+                                    {truncateAddress(result.poolAddress)}
+                                </a>
+                                <CopyButton text={result.poolAddress} />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* ── Fee View Toggle ──────────────────────── */}
+            <div className="flex justify-center mb-2">
+                <div className="glass-card p-1 flex gap-1 rounded-xl">
+                    <button
+                        onClick={() => setShowAllFees(false)}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${!showAllFees
+                            ? "bg-white/10 text-white shadow-lg"
+                            : "text-white/40 hover:text-white/70"
+                            }`}
+                    >
+                        Unclaimed Fees
+                    </button>
+                    <button
+                        onClick={() => setShowAllFees(true)}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${showAllFees
+                            ? "bg-white/10 text-white shadow-lg"
+                            : "text-white/40 hover:text-white/70"
+                            }`}
+                    >
+                        All Claimed Fees
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Hero metric: Total Potential Fees ─────────────── */}
+            <div className="glass-card glow-border p-6 text-center animate-pulse-glow">
+                <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
+                    <TrendingUp className="inline h-4 w-4 mr-1" />
+                    {showAllFees ? (
+                        "Total Fees Earned by Creator (All Tokens)"
+                    ) : (
+                        (parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) > 0
+                            ? (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator")
+                            : (activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
+                                ? "Unclaimed Fees (Current Token)"
+                                : (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator"))
+                    )}
+                </p>
+                <p className="text-4xl font-bold gradient-text mb-1">
+                    {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "ETH"}
+                    {(parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) === 0 && activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
+                        <span className="text-sm align-middle ml-2" style={{ color: "var(--text-accent)" }}>
+                            + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol}
+                        </span>
+                    )}
+                </p>
+                {(activeIncome.totalUsd || activeIncome.unclaimedUsd) && (parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")) > 0 && (
+                    <p className="text-lg font-medium" style={{ color: "var(--text-secondary)" }}>
+                        ≈ ${(parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                )}
+                <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                    {activeIncome.txCount > 0 ? (
+                        `Across ${activeIncome.txCount} transaction${activeIncome.txCount !== 1 ? "s" : ""}`
+                    ) : (
+                        activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
+                            ? "Current token rewards listed below"
+                            : "No recent transactions found"
+                    )}
+                </p>
+
+                {/* Claimed/Unclaimed Breakdown */}
+                {activeIncome.unclaimedEth && parseFloat(activeIncome.unclaimedEth) > 0 && (
+                    <div className="mt-6 pt-6 border-t border-white/5 grid grid-cols-2 gap-4">
+                        <div className="text-left">
+                            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
+                                Claimed
+                            </p>
+                            <p className="text-lg font-bold" style={{ color: "var(--text-secondary)" }}>
+                                {formatNumber(activeIncome.totalEth)} {chain?.nativeSymbol}
+                            </p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--accent-primary)" }}>
+                                Available in Locker
+                            </p>
+                            <p className="text-lg font-bold" style={{ color: "var(--accent-primary)" }}>
+                                {formatNumber(activeIncome.unclaimedEth)} {chain?.nativeSymbol}
+                            </p>
+                            {activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
+                                <p className="text-xs font-semibold opacity-80" style={{ color: "var(--accent-primary)" }}>
+                                    + {formatNumber(activeIncome.unclaimedTokenAmount)} {activeIncome.tokenSymbol || "TOKENS"}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* ── Tax Rates ──────────────────────────── */}
+            {result.taxRates && (result.taxRates.buyTax > 0 || result.taxRates.sellTax > 0) ? (
+                <div className="grid grid-cols-2 gap-4">
+                    <TaxBadge label="Buy Tax" value={result.taxRates.buyTax} />
+                    <TaxBadge label="Sell Tax" value={result.taxRates.sellTax} />
+                </div>
+            ) : null}
+
+            {/* ── Fee Wallets ────────────────────────── */}
+            {result.feeWallets.length > 0 ? (
+                <div className="glass-card p-6">
+                    <h3
+                        className="text-sm font-semibold mb-4 flex items-center gap-2"
+                        style={{ color: "var(--text-secondary)" }}
+                    >
+                        <Wallet className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                        Fee Wallets ({result.feeWallets.length})
+                    </h3>
+                    <div className="space-y-3">
+                        {result.feeWallets.map((wallet, i) => (
+                            <div
+                                key={i}
+                                className="flex items-center justify-between p-3 rounded-xl"
+                                style={{ background: "var(--bg-secondary)" }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <span
+                                        className="px-2 py-0.5 rounded text-xs font-medium"
+                                        style={{
+                                            background: "rgba(34, 211, 238, 0.1)",
+                                            color: "var(--accent-primary)",
+                                        }}
+                                    >
+                                        {wallet.label}
+                                    </span>
+                                    <span
+                                        className="text-sm font-mono"
+                                        style={{ color: "var(--text-secondary)" }}
+                                    >
+                                        {truncateAddress(wallet.address)}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <CopyButton text={wallet.address} />
+                                    <a
+                                        href={`${explorerUrl}/address/${wallet.address}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-1 transition-colors"
+                                        style={{ color: "var(--text-muted)" }}
+                                    >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                <div
+                    className="glass-card p-4 text-center text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                >
+                    {result.contractVerified
+                        ? "No standard fee wallets detected"
+                        : "Contract not verified — unable to detect fee wallets"}
+                </div>
+            )}
+
+            {/* ── Recent Transactions ────────────────── */}
+            {(activeIncome.recentTxs.length > 0 || (result.allWalletIncome?.recentTxs && result.allWalletIncome.recentTxs.length > 0)) && (
+                <div className="glass-card p-6">
+                    <h3
+                        className="text-sm font-semibold mb-4 flex items-center gap-2"
+                        style={{ color: "var(--text-secondary)" }}
+                    >
+                        <Clock className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                        {activeIncome.recentTxs.length > 0 ? "Recent Fee Transactions" : "Recent Creator Transactions (All Tokens)"}
+                    </h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ color: "var(--text-muted)" }}>
+                                    <th className="text-left py-2 pr-4 font-medium text-xs">Tx Hash</th>
+                                    <th className="text-left py-2 pr-4 font-medium text-xs">From</th>
+                                    <th className="text-right py-2 pr-4 font-medium text-xs">Amount</th>
+                                    <th className="text-right py-2 font-medium text-xs">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(activeIncome.recentTxs.length > 0 ? activeIncome.recentTxs : (result.allWalletIncome?.recentTxs || [])).map((tx, i) => (
+                                    <tr
+                                        key={i}
+                                        style={{ borderTop: "1px solid var(--border-subtle)" }}
+                                    >
+                                        <td className="py-2.5 pr-4">
+                                            <a
+                                                href={`${explorerUrl}/tx/${tx.hash}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="font-mono transition-colors"
+                                                style={{ color: "var(--accent-primary)" }}
+                                            >
+                                                {truncateAddress(tx.hash)}
+                                            </a>
+                                        </td>
+                                        <td
+                                            className="py-2.5 pr-4 font-mono"
+                                            style={{ color: "var(--text-secondary)" }}
+                                        >
+                                            {truncateAddress(tx.from)}
+                                        </td>
+                                        <td
+                                            className="py-2.5 pr-4 text-right font-mono font-medium"
+                                            style={{ color: "var(--text-primary)" }}
+                                        >
+                                            {formatNumber(tx.value)} {chain?.nativeSymbol || "ETH"}
+                                        </td>
+                                        <td
+                                            className="py-2.5 text-right"
+                                            style={{ color: "var(--text-muted)" }}
+                                        >
+                                            {timeAgo(tx.timestamp)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

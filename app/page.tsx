@@ -1,65 +1,191 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { Dog } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import SearchBar from "@/components/SearchBar";
+import ResultsView from "@/components/ResultsView";
+import SkeletonLoader from "@/components/SkeletonLoader";
+import type { AnalysisResult, AnalysisError } from "@/lib/types";
+
+// Example token on Base — a known taxed token for demo
+const EXAMPLE_ADDRESS = "0xF35452565ABe5c1A81C8faA35169a754732b5B07";
+
+type AppState = "search" | "loading" | "results" | "error";
 
 export default function Home() {
+  const [state, setState] = useState<AppState>("search");
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState("");
+
+  const handleSearch = async (address: string, chain: string) => {
+    setState("loading");
+    setError("");
+
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, chain }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        const err = data as AnalysisError;
+        setError(err.error || "Something went wrong");
+        setState("error");
+        return;
+      }
+
+      setResult(data as AnalysisResult);
+      setState("results");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect to the server");
+      setState("error");
+    }
+  };
+
+  const handleReset = () => {
+    setState("search");
+    setResult(null);
+    setError("");
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-40 py-12">
+      {/* ── Persistent Hero & Search ─────────────────── */}
+      <motion.div
+        layout
+        initial={false}
+        className="text-center w-full max-w-2xl mb-8"
+      >
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <Dog
+            className="h-12 w-12"
+            style={{ color: "var(--accent-primary)" }}
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        <h1 className="text-5xl sm:text-6xl font-bold mb-3 gradient-text">
+          FeeSniff
+        </h1>
+        <p
+          className="text-lg max-w-md mx-auto mb-10"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          See how much token creators earn in fees.
+          <br />
+          Paste a contract address to start sniffing.
+        </p>
+
+        <SearchBar onSubmit={handleSearch} isLoading={state === "loading"} />
+
+        {state === "search" && (
+          <button
+            onClick={() => handleSearch(EXAMPLE_ADDRESS, "base")}
+            className="mt-6 text-sm transition-colors cursor-pointer opacity-60 hover:opacity-100"
+            style={{ color: "var(--text-muted)" }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+            Try with an example token →
+          </button>
+        )}
+      </motion.div>
+
+      {/* ── Dropdown Result Area ──────────────────────── */}
+      <div className="w-full max-w-3xl">
+        <AnimatePresence mode="wait">
+          {state === "loading" && (
+            <motion.div
+              key="loading"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.6, ease: [0.04, 0.62, 0.23, 0.98] }}
+              className="overflow-hidden"
+            >
+              <div className="pt-8 pb-12 flex flex-col items-center">
+                <p className="text-sm font-medium mb-6 animate-pulse" style={{ color: "var(--text-muted)" }}>
+                  🐕 Sniffing fees...
+                </p>
+                <SkeletonLoader />
+              </div>
+            </motion.div>
+          )}
+
+          {state === "results" && result && (
+            <motion.div
+              key="results"
+              initial={{ height: 0, opacity: 0, y: -20 }}
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -20 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className="overflow-hidden"
+            >
+              <div className="pt-4 pb-12">
+                <ResultsView result={result} onBack={handleReset} />
+              </div>
+            </motion.div>
+          )}
+
+          {state === "error" && error && (
+            <motion.div
+              key="error"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mt-6"
+            >
+              <div
+                className="px-5 py-3 rounded-xl text-sm text-center"
+                style={{
+                  background: "rgba(239, 68, 68, 0.1)",
+                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  color: "var(--status-red)",
+                }}
+              >
+                {error}
+              </div>
+            </motion.div>
+          )}
+
+          {state === "search" && (
+            <motion.div
+              key="features"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8 w-full"
+            >
+              {[
+                {
+                  title: "Detect Tax Rates",
+                  desc: "Instantly see buy/sell tax percentages from the contract",
+                },
+                {
+                  title: "Find Fee Wallets",
+                  desc: "Identify where the creator's fees are being sent",
+                },
+                {
+                  title: "Track Earnings",
+                  desc: "See total ETH earned and recent fee transactions",
+                },
+              ].map((f, i) => (
+                <div key={i} className="glass-card p-5 text-center">
+                  <h3
+                    className="text-sm font-semibold mb-1"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {f.title}
+                  </h3>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {f.desc}
+                  </p>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
