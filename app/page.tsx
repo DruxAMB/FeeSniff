@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Dog } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import SearchBar from "@/components/SearchBar";
 import ResultsView from "@/components/ResultsView";
@@ -66,7 +65,7 @@ export default function Home() {
             className="h-12 w-12"
             style={{ color: "var(--accent-primary)" }}
           /> */}
-          <Image src="/logo.gif" height={100} width={100} alt="" className="rounded-xl" />
+          <Image src="/logo.gif" height={100} width={100} alt="" className="rounded-xl" unoptimized />
         </div>
         <h1 className="text-5xl sm:text-6xl font-bold mb-3 gradient-text">
           FeeSniff

@@ -28,6 +28,7 @@ export const metadata: Metadata = {
 
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
+import TokenMarquee from "@/components/TokenMarquee";
 
 export default function RootLayout({
   children,
@@ -40,8 +41,11 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} antialiased font-sans`}
       >
         <ThemeProvider>
+          {/* ── Token Marquee ────────────────────────── */}
+          <TokenMarquee />
+
           {/* ── Navbar ───────────────────────────────── */}
-          <nav className="fixed top-0 left-0 right-0 z-50">
+          <nav className="fixed top-9 left-0 right-0 z-50" style={{ background: "var(--bg-primary)" }}>
             <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
               <a href="/" className="flex items-center gap-2 font-semibold text-lg shrink-0">
                 <Image src="/nosey.png" height={100} width={100} alt="" className="rounded-xl w-6 h-6" />
@@ -49,15 +53,6 @@ export default function RootLayout({
               </a>
               <div className="flex items-center gap-4">
                 <ThemeToggle />
-                <a
-                  href="https://github.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm transition-colors hover:text-text-secondary"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  GitHub
-                </a>
               </div>
             </div>
           </nav>
