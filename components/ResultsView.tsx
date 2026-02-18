@@ -26,12 +26,27 @@ function truncateAddress(addr: string): string {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-function formatNumber(val: string | number): string {
+function formatNumber(val: string | number): React.ReactNode {
     const num = typeof val === "string" ? parseFloat(val) : val;
     if (isNaN(num)) return "0";
     if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
     if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`;
-    if (num < 0.0001 && num > 0) return num.toExponential(2);
+
+    // Handle small values with compact zero notation (e.g., 0.0₅34)
+    if (num < 0.0001 && num > 0) {
+        const str = num.toFixed(20);
+        const match = str.match(/^0\.0+/);
+        if (match) {
+            const zerosCount = match[0].length - 2; // subtract "0."
+            const significantDigits = str.slice(match[0].length).slice(0, 4);
+            return (
+                <span className="inline-flex items-baseline font-mono">
+                    0.0<sup className="text-[10px] mx-0.5" style={{ verticalAlign: "super" }}>{zerosCount}</sup>{significantDigits}
+                </span>
+            );
+        }
+    }
+
     return num.toFixed(4);
 }
 
@@ -91,15 +106,14 @@ function TaxBadge({ label, value }: { label: string; value: number }) {
 }
 
 export default function ResultsView({ result, onBack }: ResultsViewProps) {
-    const [showAllFees, setShowAllFees] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 10;
 
     const chain = CHAINS.find((c) => c.id === result.chain);
     const explorerUrl = chain?.explorerUrl || "https://basescan.org";
 
-    const activeIncome = (showAllFees && result.allWalletIncome) ? result.allWalletIncome : result.feeIncome;
-    const allTxs = activeIncome.recentTxs.length > 0 ? activeIncome.recentTxs : (result.allWalletIncome?.recentTxs || []);
+    const activeIncome = result.feeIncome;
+    const allTxs = activeIncome.recentTxs;
 
     const totalPages = Math.ceil(allTxs.length / ITEMS_PER_PAGE);
     const paginatedTxs = allTxs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -224,47 +238,16 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                 </div>
             </div>
 
-            {/* ── Fee View Toggle ──────────────────────── */}
-            <div>
-                <div className="flex justify-center">
-                    <div className="glass-card p-1 flex gap-1">
-                        <button
-                            onClick={() => setShowAllFees(false)}
-                            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${!showAllFees
-                                ? "bg-accent-primary text-bg-primary shadow-sm"
-                                : "text-text-muted hover:text-text-primary"
-                                }`}
-                        >
-                            Unclaimed Fees
-                        </button>
-                        <button
-                            onClick={() => setShowAllFees(true)}
-                            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${showAllFees
-                                ? "bg-accent-primary text-bg-primary shadow-sm"
-                                : "text-text-muted hover:text-text-primary"
-                                }`}
-                        >
-                            All Claimed Fees
-                        </button>
-                    </div>
-                </div>
-
-                {/* ── Hero metric: Total Potential Fees ─────────────── */}
+            {/* ── Fee Breakdowns ──────────────────────── */}
+            <div className="space-y-4">
+                {/* ── Hero metric: Total Creator Revenue ─────────────── */}
                 <div className="glass-card p-8 text-center border-2 border-(--border-strong)">
                     <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
                         <TrendingUp className="inline h-4 w-4 mr-1" />
-                        {showAllFees ? (
-                            "Total Fees Earned by Creator (All Tokens)"
-                        ) : (
-                            (parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) > 0
-                                ? (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator")
-                                : (activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
-                                    ? "Unclaimed Fees (Current Token)"
-                                    : (result.poolAddress ? "Total LP Fees Generated (This Token)" : "Total Fees Earned by Creator"))
-                        )}
+                        Total Fees Claimed (Platform Global)
                     </p>
                     <p className="text-4xl font-bold gradient-text mb-1">
-                        {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "ETH"}
+                        {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "WETH"}
                         {(parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) === 0 && activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
                             <span className="text-sm align-middle ml-2" style={{ color: "var(--status-green)" }}>
                                 + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol}
@@ -291,7 +274,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         <div className="mt-6 pt-6 border-t border-(--border-subtle) grid grid-cols-2 gap-4">
                             <div className="text-left">
                                 <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
-                                    Claimed
+                                    Global Claimed
                                 </p>
                                 <p className="text-lg font-bold" style={{ color: "var(--text-secondary)" }}>
                                     {formatNumber(activeIncome.totalEth)} {chain?.nativeSymbol}
@@ -385,14 +368,14 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
             )}
 
             {/* ── Recent Transactions ────────────────── */}
-            {(activeIncome.recentTxs.length > 0 || (result.allWalletIncome?.recentTxs && result.allWalletIncome.recentTxs.length > 0)) && (
+            {activeIncome.recentTxs.length > 0 && (
                 <div className="glass-card p-6">
                     <h3
                         className="text-sm font-semibold mb-4 flex items-center gap-2"
                         style={{ color: "var(--text-secondary)" }}
                     >
                         <Clock className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
-                        {activeIncome.recentTxs.length > 0 ? "Recent Fee Transactions" : "Recent Creator Transactions (All Tokens)"}
+                        Recent Creator Transactions (Global)
                     </h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -431,7 +414,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                             className="py-2.5 pr-4 text-right font-mono font-medium"
                                             style={{ color: "var(--text-primary)" }}
                                         >
-                                            {formatNumber(tx.value)} {chain?.nativeSymbol || "ETH"}
+                                            {formatNumber(tx.value)} {chain?.nativeSymbol || "WETH"}
                                         </td>
                                         <td
                                             className="py-2.5 text-right"
@@ -461,18 +444,14 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                     <ChevronLeft className="h-4 w-4" />
                                 </button>
                                 <div className="flex items-center gap-1">
-                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                                        <button
-                                            key={page}
-                                            onClick={() => setCurrentPage(page)}
-                                            className={`w-8 h-8 rounded-lg text-xs font-medium transition-all cursor-pointer border ${currentPage === page
-                                                ? "bg-accent-primary text-bg-primary border-accent-primary"
-                                                : "border-(--border-subtle) text-text-muted hover:text-text-primary hover:bg-bg-secondary"
-                                                }`}
-                                        >
-                                            {page}
-                                        </button>
-                                    ))}
+                                    <span
+                                        className="w-10 h-8 flex items-center justify-center rounded-lg text-xs font-bold border border-accent-primary bg-accent-primary text-bg-primary shadow-sm"
+                                    >
+                                        {currentPage}
+                                    </span>
+                                    <span className="text-xs font-medium px-2" style={{ color: "var(--text-muted)" }}>
+                                        of {totalPages}
+                                    </span>
                                 </div>
                                 <button
                                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}

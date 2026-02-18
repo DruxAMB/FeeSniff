@@ -1,6 +1,6 @@
 export default function SkeletonLoader() {
     return (
-        <div className="w-full max-w-3xl mx-auto space-y-4 animate-fade-in">
+        <div className="w-full max-w-3xl mx-auto space-y-4 animate-fade-in animate-pulse-soft">
             {/* Token header skeleton */}
             <div className="glass-card p-6 border border-(--border-subtle)">
                 <div className="flex items-center gap-4">

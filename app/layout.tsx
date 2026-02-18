@@ -27,6 +27,7 @@ export const metadata: Metadata = {
 };
 
 import { ThemeToggle } from "@/components/ThemeToggle";
+import Image from "next/image";
 
 export default function RootLayout({
   children,
@@ -43,7 +44,7 @@ export default function RootLayout({
           <nav className="fixed top-0 left-0 right-0 z-50">
             <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
               <a href="/" className="flex items-center gap-2 font-semibold text-lg shrink-0">
-                <p className="h-6 w-6" style={{ color: "var(--accent-primary)" }}>👃🏽</p>
+                <Image src="/nosey.png" height={100} width={100} alt="" className="rounded-xl w-6 h-6" />
                 <span className="gradient-text">FeeSniff</span>
               </a>
               <div className="flex items-center gap-4">

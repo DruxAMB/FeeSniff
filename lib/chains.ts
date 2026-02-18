@@ -15,7 +15,7 @@ export const CHAINS: ChainConfig[] = [
     uniV3Factory: "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
     clankerLocker: "0xF3622742b1E446D92e45E22923Ef11C2fcD55D68",
     nativeSymbol: "ETH",
-    icon: "🔵",
+    icon: "🟦",
     enabled: true,
   },
   {

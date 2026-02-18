@@ -711,10 +711,10 @@ export async function getFeeWalletIncome(
   let allTxs: FeeTransaction[] = [];
   let dataFound = false;
 
-  // Parallel fetch: Claimed (Blockscout) and Unclaimed (Locker)
+  // Parallel fetch: Global Claimed (Blockscout) and Token-Specific Unclaimed (Locker)
   const [ethResult, wethResult, unclaimedResult] = await Promise.all([
-    poolAddress ? Promise.resolve(null) : fetchBlockscoutIncomingTxs(walletAddress, chain),
-    fetchBlockscoutWethTransfers(walletAddress, chain, poolAddress, tokenAddress),
+    fetchBlockscoutIncomingTxs(walletAddress, chain),
+    fetchBlockscoutWethTransfers(walletAddress, chain),
     tokenAddress 
       ? getUnclaimedFees(walletAddress, tokenAddress, chain) 
       : Promise.resolve({ unclaimedEth: "0", unclaimedTokenAmount: "0", tokenSymbol: "" }),
@@ -910,20 +910,16 @@ export async function analyzeToken(
     poolAddress = await findLPPool(address, chain);
   }
 
-  // Step 5: Calculate fee income for both Token-Specific and All-Wallet views
+  // Step 5: Calculate fee income for the creator's wallets (Global Claimed + Token-Specific Unclaimed)
   const ethPrice = await getEthPrice();
-  
-  const [feeIncome, allWalletIncome] = await Promise.all([
-    calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice),
-    calculateCombinedIncome(feeWallets, chain, null, null, ethPrice),
-  ]);
+  const feeIncome = await calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice);
 
   return {
     token: tokenInfo,
     taxRates,
     feeWallets,
     feeIncome,
-    allWalletIncome,
+    allWalletIncome: feeIncome, // Provide as duplicate for compatibility if needed, though UI won't toggle
     poolAddress,
     chain: chainId,
     contractVerified: source.verified,
