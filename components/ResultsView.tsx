@@ -164,7 +164,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </div>
                     </div>
 
-                    <div className="text-right">
+                    <div className="text-right flex flex-col items-end gap-2">
                         <span
                             className="px-2.5 py-1 rounded-lg text-xs font-bold border border-(--border-subtle)"
                             style={{
@@ -174,6 +174,18 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         >
                             {result.contractVerified ? "✓ Verified" : "⚠ Unverified"}
                         </span>
+                        {result.platform && result.platform !== "generic" && (
+                            <span
+                                className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border"
+                                style={{
+                                    borderColor: "#22c55e33",
+                                    background: "#22c55e11",
+                                    color: "#22c55e"
+                                }}
+                            >
+                                {result.platform} Optimized
+                            </span>
+                        )}
                     </div>
                 </div>
 

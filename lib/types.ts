@@ -60,6 +60,7 @@ export type AnalysisResult = {
   chain: string;
   contractVerified: boolean;
   contractAddress: string;
+  platform?: "clanker" | "wow" | "generic";
 };
 
 export type AnalysisError = {

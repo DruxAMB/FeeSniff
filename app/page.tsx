@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import SearchBar from "@/components/SearchBar";
 import ResultsView from "@/components/ResultsView";
 import SkeletonLoader from "@/components/SkeletonLoader";
+import SupportedPlatforms from "@/components/SupportedPlatforms";
 import type { AnalysisResult, AnalysisError } from "@/lib/types";
 import Image from "next/image";
 
@@ -53,18 +54,19 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-40 py-12">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
       {/* ── Persistent Hero & Search ─────────────────── */}
       <motion.div
         layout
         initial={false}
         className="text-center w-full max-w-2xl mb-8"
       >
+        {state !== "results" && (
+          <div className="mb-40">
+            <SupportedPlatforms />
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3 mb-4">
-          {/* <Dog
-            className="h-12 w-12"
-            style={{ color: "var(--accent-primary)" }}
-          /> */}
           <Image src="/logo.gif" height={100} width={100} alt="" className="rounded-xl" unoptimized />
         </div>
         <h1 className="text-5xl sm:text-6xl font-bold mb-3 gradient-text">
@@ -84,7 +86,7 @@ export default function Home() {
         {state === "search" && (
           <button
             onClick={() => handleSearch(EXAMPLE_ADDRESS, "base")}
-            className="mt-6 text-sm transition-colors cursor-pointer opacity-60 hover:opacity-100"
+            className="mt-6 text-sm transition-colors cursor-pointer opacity-40 hover:opacity-100"
             style={{ color: "var(--text-muted)" }}
           >
             Try with an example token →

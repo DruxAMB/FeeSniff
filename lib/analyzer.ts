@@ -882,12 +882,16 @@ export async function analyzeToken(
     });
   }
 
-  // Step 4: Find LP pool for fee filtering
+  // Step 4: Find LP pool for fee filtering & Detect Platform
   let poolAddress: string | null = null;
+  let platform: "clanker" | "wow" | "generic" = "generic";
 
-  // Try allData() first (Clanker specific metadata)
+  // Try allData() (Clanker) or wowData() (Wow) detection
   const abiArray = Array.isArray(source.abi) ? source.abi : [];
+  
+  // Clanker Detection
   if (source.verified && abiArray.some((f: any) => f.name === "allData")) {
+    platform = "clanker";
     try {
       const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
       const contract = new ethers.Contract(address, ["function allData() view returns (tuple(address,address,uint256,uint256,uint256,uint256))"], provider);
@@ -903,9 +907,21 @@ export async function analyzeToken(
     } catch (err) {
       // Different Clanker version might have different allData tuple
     }
+  } 
+  // Wow Detection (Zora)
+  else if (source.verified && abiArray.some((f: any) => f.name === "wowData")) {
+    platform = "wow";
+    try {
+        const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+        const contract = new ethers.Contract(address, ["function wowData() view returns (tuple(address,address,uint256,uint256,uint256,uint256,uint256))"], provider);
+        const data = await contract.wowData();
+        if (data && data[0]) {
+            poolAddress = ethers.getAddress(data[0]);
+        }
+    } catch {}
   }
 
-  // Fallback to factory discovery if allData failed
+  // Fallback to factory discovery if platform-specific discovery failed
   if (!poolAddress) {
     poolAddress = await findLPPool(address, chain);
   }
@@ -921,6 +937,7 @@ export async function analyzeToken(
     feeIncome,
     allWalletIncome: feeIncome, // Provide as duplicate for compatibility if needed, though UI won't toggle
     poolAddress,
+    platform,
     chain: chainId,
     contractVerified: source.verified,
     contractAddress: address,
