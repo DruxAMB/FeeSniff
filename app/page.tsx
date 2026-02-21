@@ -54,7 +54,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-40 py-12">
       {/* ── Persistent Hero & Search ─────────────────── */}
       <motion.div
         layout
@@ -62,7 +62,7 @@ export default function Home() {
         className="text-center w-full max-w-2xl mb-8"
       >
         {state !== "results" && (
-          <div className="mb-40">
+          <div className="mb-32">
             <SupportedPlatforms />
           </div>
         )}

@@ -8,7 +8,7 @@ import type {
   FeeTransaction,
   AnalysisResult,
 } from "./types";
-import { getChain } from "./chains";
+import { getChain, ETHERSCAN_V2_API } from "./chains";
 
 // ─── Common fee-related getter names ────────────────────────
 // These are tried in order against the contract ABI to detect fee wallets & tax rates.
@@ -100,25 +100,39 @@ const SELL_TAX_GETTERS = [
 // Etherscan V2: single API key for all chains
 const ETHERSCAN_API_KEY = (process.env.ETHERSCAN_API_KEY || "").replace(/"/g, "");
 
+// Bankr Platform Constants
+const BANKR_DEPLOYER = "0x2112b8456AC07c15fA31ddf3Bf713E77716fF3F9";
+const DOPPLER_DEPLOYER_OLD = "0xA36715dA46Ddf4A769f3290f49AF58bF8132ED8E";
+const DOPPLER_DEPLOYER_NEW = "0xD59cE43E53D69F190E15d9822Fb4540dCcc91178";
+const BANKR_FEE_WALLET = "0xF60633D02690e2A15A54AB919925F3d038Df163e";
+
+const BANKR_DEPLOYERS = [
+  BANKR_DEPLOYER.toLowerCase(),
+  DOPPLER_DEPLOYER_OLD.toLowerCase(),
+  DOPPLER_DEPLOYER_NEW.toLowerCase()
+];
+
 async function explorerFetch(
   chain: ChainConfig,
   params: Record<string, string>
 ): Promise<unknown> {
-  const url = new URL("https://api.etherscan.io/v2/api");
-  url.searchParams.set("chainid", String(chain.chainId));
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, v);
-  }
-  if (ETHERSCAN_API_KEY) {
-    url.searchParams.set("apikey", ETHERSCAN_API_KEY);
+  // Use Blockscout V1 API if available (Etherscan compatible)
+  const blockscoutV1 = chain.blockscoutApi?.replace("/v2", "");
+  const query = new URLSearchParams(params).toString();
+  
+  if (blockscoutV1) {
+    const url = `${blockscoutV1}?${query}`;
+    try {
+      const res = await fetch(url);
+      if (res.ok) return res.json();
+    } catch {}
   }
 
-  const res = await fetch(url.toString());
+  // Fallback to Etherscan
+  const url = `${ETHERSCAN_V2_API}?chainid=${chain.chainId}&${query}&apikey=${ETHERSCAN_API_KEY}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`Explorer API returned ${res.status}`);
-
-  const data = await res.json();
-
-  return data;
+  return res.json();
 }
 
 // ─── Contract source / ABI ──────────────────────────────────
@@ -133,26 +147,48 @@ export async function getContractSource(
   address: string,
   chain: ChainConfig
 ): Promise<ContractSourceResult> {
-  const data = (await explorerFetch(chain, {
-    module: "contract",
-    action: "getsourcecode",
-    address,
-  })) as { status: string; message: string; result: Array<{ ABI: string; ContractName: string }> };
-
-  if (data.status !== "1" || !data.result?.[0]) {
-    return { abi: [], sourceName: "", verified: false };
-  }
-
-  const entry = data.result[0];
-  if (entry.ABI === "Contract source code not verified") {
-    return { abi: [], sourceName: entry.ContractName || "", verified: false };
-  }
-
+  const url = `${chain.blockscoutApi}/smart-contracts/${address}`;
   try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      // Fallback to Etherscan if Blockscout fails
+      return getContractSourceEtherscan(address, chain);
+    }
+    const data = await res.json();
+    return {
+      abi: data.abi ? JSON.parse(data.abi) : [],
+      sourceName: data.name || "",
+      verified: !!data.is_verified,
+    };
+  } catch (err) {
+    return getContractSourceEtherscan(address, chain);
+  }
+}
+
+async function getContractSourceEtherscan(
+  address: string,
+  chain: ChainConfig
+): Promise<ContractSourceResult> {
+  try {
+    const data = (await explorerFetch(chain, {
+      module: "contract",
+      action: "getsourcecode",
+      address,
+    })) as { status: string; message: string; result: Array<{ ABI: string; ContractName: string }> };
+
+    if (data.status !== "1" || !data.result?.[0]) {
+      return { abi: [], sourceName: "", verified: false };
+    }
+
+    const entry = data.result[0];
+    if (entry.ABI === "Contract source code not verified") {
+      return { abi: [], sourceName: entry.ContractName || "", verified: false };
+    }
+
     const abi = JSON.parse(entry.ABI);
     return { abi, sourceName: entry.ContractName || "", verified: true };
   } catch {
-    return { abi: [], sourceName: entry.ContractName || "", verified: false };
+    return { abi: [], sourceName: "", verified: false };
   }
 }
 
@@ -204,33 +240,50 @@ export async function getDeployer(
   address: string,
   chain: ChainConfig
 ): Promise<{ deployer: string; deployedAt: string } | null> {
+  const url = `${chain.blockscoutApi}/addresses/${address}`;
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+        const data = await res.json();
+        if (data.creator_address_hash) {
+            let deployedAt = "";
+            if (data.creation_tx_hash) {
+                try {
+                    const txUrl = `${chain.blockscoutApi}/transactions/${data.creation_tx_hash}`;
+                    const txRes = await fetch(txUrl);
+                    const txData = await txRes.json();
+                    if (txData.timestamp) {
+                        deployedAt = new Date(txData.timestamp).toISOString();
+                    }
+                } catch {}
+            }
+            return {
+                deployer: ethers.getAddress(data.creator_address_hash),
+                deployedAt
+            };
+        }
+    }
+  } catch {}
+
+  // Try Blockscout V1 getcontractcreation
   try {
     const data = (await explorerFetch(chain, {
       module: "contract",
       action: "getcontractcreation",
       contractaddresses: address,
-    })) as { status: string; result: Array<{ contractCreator: string; txHash: string }> };
+    })) as { status: string; result: Array<{ contractCreator: string; txHash: string; timeStamp?: string }> };
 
-    if (data.status !== "1" || !data.result?.[0]) return null;
-
-    const creator = data.result[0].contractCreator;
-    const txHash = data.result[0].txHash;
-
-    // Get deploy timestamp from the tx
-    const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
-    const tx = await provider.getTransaction(txHash);
-    let deployedAt = "";
-    if (tx?.blockNumber) {
-      const block = await provider.getBlock(tx.blockNumber);
-      if (block) {
-        deployedAt = new Date(block.timestamp * 1000).toISOString();
+    if (data.status === "1" && data.result?.[0]) {
+      const creator = data.result[0].contractCreator;
+      let deployedAt = "";
+      if (data.result[0].timeStamp) {
+          deployedAt = new Date(parseInt(data.result[0].timeStamp) * 1000).toISOString();
       }
+      return { deployer: creator, deployedAt };
     }
-
-    return { deployer: creator, deployedAt };
-  } catch {
-    return null;
-  }
+  } catch {}
+  
+  return null;
 }
 
 // ─── Tax rate detection ─────────────────────────────────────
@@ -884,13 +937,42 @@ export async function analyzeToken(
 
   // Step 4: Find LP pool for fee filtering & Detect Platform
   let poolAddress: string | null = null;
-  let platform: "clanker" | "wow" | "generic" = "generic";
+  let platform: "clanker" | "wow" | "bankr" | "generic" = "generic";
+  let subPlatform: string | undefined = undefined;
 
-  // Try allData() (Clanker) or wowData() (Wow) detection
   const abiArray = Array.isArray(source.abi) ? source.abi : [];
+  const abiString = JSON.stringify(source.abi);
+  const deployer = deployerInfo?.deployer?.toLowerCase();
+
+  // 1. Bankr / Doppler Detection (ABI Feature Based & Deployer Fallback)
+  // Use string-based search for higher resilience against minor ABI structure variations
+  // Doppler unique signatures: vestedTotalAmount, yearlyMintRate, computeAvailableVestedAmount
+  const isDoppler = abiString.includes('"name":"vestedTotalAmount"') || 
+                    abiString.includes('"name":"yearlyMintRate"') ||
+                    abiString.includes('"name":"computeAvailableVestedAmount"');
   
-  // Clanker Detection
-  if (source.verified && abiArray.some((f: any) => f.name === "allData")) {
+  const isClankerV4 = abiString.includes('"name":"clanker"'); 
+  
+  if (isDoppler || (deployer && BANKR_DEPLOYERS.includes(deployer))) {
+    platform = "bankr";
+    subPlatform = isDoppler || deployer !== BANKR_DEPLOYER.toLowerCase() ? "doppler" : "clanker";
+  } else if (isClankerV4) {
+    platform = "bankr";
+    subPlatform = "clanker";
+  }
+
+  // Ensure Bankr Fee Wallet is included for all Bankr tokens
+  if (platform === "bankr") {
+    if (!feeWallets.some(w => w.address.toLowerCase() === BANKR_FEE_WALLET.toLowerCase())) {
+        feeWallets.push({
+            address: ethers.getAddress(BANKR_FEE_WALLET),
+            label: "Bankr Fee Wallet"
+        });
+    }
+  }
+
+  // 2. Clanker Detection (allData - V1-V3)
+  if (platform === "generic" && source.verified && abiArray.some((f: any) => f.name === "allData")) {
     platform = "clanker";
     try {
       const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
@@ -908,8 +990,8 @@ export async function analyzeToken(
       // Different Clanker version might have different allData tuple
     }
   } 
-  // Wow Detection (Zora)
-  else if (source.verified && abiArray.some((f: any) => f.name === "wowData")) {
+  // 3. Wow Detection (Zora)
+  else if (platform === "generic" && source.verified && abiArray.some((f: any) => f.name === "wowData")) {
     platform = "wow";
     try {
         const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
@@ -938,6 +1020,7 @@ export async function analyzeToken(
     allWalletIncome: feeIncome, // Provide as duplicate for compatibility if needed, though UI won't toggle
     poolAddress,
     platform,
+    subPlatform,
     chain: chainId,
     contractVerified: source.verified,
     contractAddress: address,

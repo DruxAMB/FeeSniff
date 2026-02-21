@@ -64,8 +64,7 @@ export default function TokenMarquee() {
 
     return (
         <div
-            className="fixed top-0 left-0 right-0 z-100 h-9 flex items-center overflow-hidden border-b border-(--border-subtle)"
-            style={{ background: "var(--bg-primary)" }}
+            className="fixed top-0 left-0 right-0 z-100 h-9 flex items-center overflow-hidden border-b border-(--border-subtle) backdrop-blur-md"
         >
             <motion.div
                 className="flex"

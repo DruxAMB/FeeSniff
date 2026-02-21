@@ -45,7 +45,7 @@ export default function RootLayout({
           <TokenMarquee />
 
           {/* ── Navbar ───────────────────────────────── */}
-          <nav className="fixed top-9 left-0 right-0 z-50" style={{ background: "var(--bg-primary)" }}>
+          <nav className="fixed top-9 left-0 right-0 z-50 backdrop-blur-md">
             <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
               <a href="/" className="flex items-center gap-2 font-semibold text-lg shrink-0">
                 <Image src="/nosey.png" height={100} width={100} alt="" className="rounded-xl w-6 h-6" />

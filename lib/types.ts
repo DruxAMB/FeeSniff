@@ -60,7 +60,8 @@ export type AnalysisResult = {
   chain: string;
   contractVerified: boolean;
   contractAddress: string;
-  platform?: "clanker" | "wow" | "generic";
+  platform?: "clanker" | "wow" | "bankr" | "generic";
+  subPlatform?: string;
 };
 
 export type AnalysisError = {

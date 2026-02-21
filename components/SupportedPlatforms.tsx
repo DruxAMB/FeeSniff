@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const ECOSYSTEMS = [
     "Clanker",
-    "Wow (Zora)"
+    "Wow (Zora)",
+    "Bankr"
 ];
 
 export default function SupportedPlatforms() {

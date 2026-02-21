@@ -176,14 +176,15 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </span>
                         {result.platform && result.platform !== "generic" && (
                             <span
-                                className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border"
+                                className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5"
                                 style={{
-                                    borderColor: "#22c55e33",
-                                    background: "#22c55e11",
-                                    color: "#22c55e"
+                                    borderColor: result.platform === "bankr" ? "#3b82f633" : "#22c55e33",
+                                    background: result.platform === "bankr" ? "#3b82f611" : "#22c55e11",
+                                    color: result.platform === "bankr" ? "#3b82f6" : "#22c55e"
                                 }}
                             >
-                                {result.platform} Optimized
+                                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: result.platform === "bankr" ? "#3b82f6" : "#22c55e" }}></span>
+                                {result.platform === "bankr" ? `Bankr ${result.subPlatform === "doppler" ? "Doppler" : "Clanker v4"}` : result.platform} Optimized
                             </span>
                         )}
                     </div>
@@ -305,6 +306,28 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                     </p>
                                 )}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Bankr Fee Split Breakdown */}
+                    {result.platform === "bankr" && (
+                        <div className="mt-6 pt-6 border-t border-(--border-subtle)">
+                            <p className="text-[10px] uppercase tracking-widest font-black mb-4 text-center opacity-50">Launcher Fee Split ({result.subPlatform === "doppler" ? "Doppler" : "Clanker v4"})</p>
+                            <div className="grid grid-cols-2 gap-8 max-w-sm mx-auto">
+                                <div className="text-center">
+                                    <p className="text-[10px] font-bold mb-1" style={{ color: "var(--text-muted)" }}>Bankr Share ({result.subPlatform === "doppler" ? "0.56%" : "0.4%"})</p>
+                                    <p className="text-lg font-mono font-bold" style={{ color: "#3b82f6" }}>
+                                        {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) * (result.subPlatform === "doppler" ? 0.466 : 0.4))} ETH
+                                    </p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[10px] font-bold mb-1" style={{ color: "var(--text-muted)" }}>Creator Share ({result.subPlatform === "doppler" ? "0.64%" : "0.6%"})</p>
+                                    <p className="text-lg font-mono font-bold" style={{ color: "var(--text-primary)" }}>
+                                        {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) * (result.subPlatform === "doppler" ? 0.533 : 0.6))} ETH
+                                    </p>
+                                </div>
+                            </div>
+                            <p className="text-[9px] mt-4 opacity-40 italic">Note: splits based on official Bankr launchpad ratios.</p>
                         </div>
                     )}
                 </div>
