@@ -112,6 +112,8 @@ const BANKR_DEPLOYERS = [
   DOPPLER_DEPLOYER_NEW.toLowerCase()
 ];
 
+const V4_MANAGER = "0x498581fF718922c3f8e6A244956af099B2652b2b";
+
 async function explorerFetch(
   chain: ChainConfig,
   params: Record<string, string>
@@ -489,6 +491,24 @@ export async function findLPPool(
     }
   }
 
+  // 3. Try Uniswap v4 detection (Look for interaction with PoolManager)
+  // If we find transfers to the PoolManager, we treat the Manager as the "pool" for volume tracking
+  try {
+    const v4Data = (await explorerFetch(chain, {
+      module: "account",
+      action: "tokentx",
+      address: V4_MANAGER,
+      contractaddress: tokenAddress,
+      page: "1",
+      offset: "1",
+      sort: "desc"
+    })) as { status: string; result: any[] };
+
+    if (v4Data.status === "1" && v4Data.result.length > 0) {
+      return V4_MANAGER;
+    }
+  } catch {}
+
   return null;
 }
 
@@ -579,6 +599,7 @@ type BlockscoutTokenTransfer = {
   from: { hash: string };
   to: { hash: string };
   total: { value: string; decimals: string };
+  token: { symbol: string; address_hash: string; decimals: string };
 };
 
 type BlockscoutTokenTransferResponse = {
@@ -684,6 +705,156 @@ async function fetchBlockscoutWethTransfers(
   }
 }
 
+// ─── Token Trade History (All Trades) ──────────────────────
+
+export async function fetchTokenTrades(
+  tokenAddress: string,
+  chain: ChainConfig
+): Promise<FeeTransaction[]> {
+  try {
+    const data = (await explorerFetch(chain, {
+      module: "account",
+      action: "tokentx",
+      contractaddress: tokenAddress,
+      startblock: "0",
+      endblock: "99999999",
+      page: "1",
+      offset: "500",
+      sort: "desc",
+    })) as { status: string; result: any[] };
+
+    if (data.status === "1" && Array.isArray(data.result)) {
+      return data.result.map(tx => ({
+        hash: tx.hash,
+        from: tx.from,
+        value: ethers.formatUnits(tx.value, Number(tx.tokenDecimal || 18)),
+        timestamp: Number(tx.timeStamp),
+      }));
+    }
+  } catch (err) {
+    console.error(`[Analyzer] Error fetching trades for ${tokenAddress}:`, err);
+  }
+  return [];
+}
+
+// ─── Pool Volume Tracker (WETH Focus) ──────────────────────
+
+export async function fetchPoolVolume(
+  poolAddress: string,
+  chain: ChainConfig,
+  tokenAddress?: string
+): Promise<string> {
+  if (!chain.wethAddress) return "0";
+  
+  const baseUrl = `${chain.blockscoutApi}/addresses/${poolAddress}/token-transfers`;
+  let totalWei = 0n;
+  
+  // Standard Pool (v3/v2/Aerodrome): We check both TO and FROM the pool for WETH
+  const filters = ["to", "from"];
+  
+  try {
+    for (const filter of filters) {
+      let url: string | null = `${baseUrl}?type=ERC-20&filter=${filter}&token=${chain.wethAddress}`;
+      let pages = 0;
+      const MAX_PAGES = 3;
+
+      while (url && pages < MAX_PAGES) {
+        const res = await fetch(url);
+        if (!res.ok) break;
+
+        const data = (await res.json()) as BlockscoutTokenTransferResponse;
+        if (!data.items) break;
+
+        for (const item of data.items) {
+          totalWei += BigInt(item.total?.value || "0");
+        }
+
+        url = data.next_page_params 
+          ? `${baseUrl}?type=ERC-20&filter=${filter}&token=${chain.wethAddress}&block_number=${data.next_page_params.block_number}&index=${data.next_page_params.index}&items_count=${data.next_page_params.items_count}`
+          : null;
+        pages++;
+      }
+    }
+    
+    return ethers.formatEther(totalWei);
+  } catch (err) {
+    console.error(`[Analyzer] Error fetching pool volume for ${poolAddress}:`, err);
+  }
+  return "0";
+}
+
+// ─── Total Lifetime Volume (Blockscout V1 + V2 Hybrid) ──────
+
+export async function fetchTotalVolume(
+  tokenAddress: string,
+  chain: ChainConfig
+): Promise<{ volumeEth: string; poolName: string }> {
+  const weth = chain.wethAddress?.toLowerCase();
+  if (!weth) return { volumeEth: "0", poolName: "" };
+
+  const v1Url = chain.blockscoutApi?.replace("/v2", "") || "";
+  const v2Url = chain.blockscoutApi;
+
+  try {
+    // Step 1: Use V1 API to get ALL token transfers involving V4_MANAGER
+    // This captures every swap transaction for this token on Uniswap v4
+    let allResults: Array<{ hash: string }> = [];
+    let page = 1;
+    const MAX_PAGES = 50;
+
+    while (page <= MAX_PAGES) {
+      const url = `${v1Url}?module=account&action=tokentx&address=${V4_MANAGER}&contractaddress=${tokenAddress}&page=${page}&offset=100&sort=asc`;
+      const res = await fetch(url);
+      if (!res.ok) break;
+      const data = await res.json();
+      if (data.status !== "1" || !data.result?.length) break;
+      allResults.push(...data.result);
+      if (data.result.length < 100) break; // last page
+      page++;
+    }
+
+    // Get unique transaction hashes
+    const txHashes = Array.from(new Set(allResults.map(r => r.hash)));
+    if (txHashes.length === 0) return { volumeEth: "0", poolName: "" };
+
+    // Step 2: For each unique tx, lookup WETH transfer amount via V2 API
+    // Process in parallel batches of 5 for speed
+    let totalWei = 0n;
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < txHashes.length; i += BATCH_SIZE) {
+      const batch = txHashes.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (hash) => {
+          try {
+            const res = await fetch(`${v2Url}/transactions/${hash}/token-transfers`);
+            if (!res.ok) return 0n;
+            const data = await res.json();
+            let txWeth = 0n;
+            for (const item of (data.items || [])) {
+              if (item.token?.address_hash?.toLowerCase() === weth) {
+                txWeth += BigInt(item.total?.value || "0");
+              }
+            }
+            return txWeth;
+          } catch {
+            return 0n;
+          }
+        })
+      );
+      for (const w of results) totalWei += w;
+    }
+
+    return {
+      volumeEth: ethers.formatEther(totalWei),
+      poolName: "",
+    };
+  } catch (err) {
+    console.error(`[Analyzer] Error fetching total volume:`, err);
+    return { volumeEth: "0", poolName: "" };
+  }
+}
+
 export async function getEthPrice(): Promise<number | null> {
   try {
     const res = await fetch(
@@ -773,12 +944,12 @@ export async function getFeeWalletIncome(
       : Promise.resolve({ unclaimedEth: "0", unclaimedTokenAmount: "0", tokenSymbol: "" }),
   ]);
 
-  if (ethResult) {
+  if (ethResult && ethResult.totalWei > 0n) {
     totalWei += ethResult.totalWei;
     allTxs.push(...ethResult.txs);
     dataFound = true;
   }
-  if (wethResult) {
+  if (wethResult && wethResult.totalWei > 0n) {
     totalWei += wethResult.totalWei;
     allTxs.push(...wethResult.txs);
     dataFound = true;
@@ -1010,14 +1181,33 @@ export async function analyzeToken(
 
   // Step 5: Calculate fee income for the creator's wallets (Global Claimed + Token-Specific Unclaimed)
   const ethPrice = await getEthPrice();
-  const feeIncome = await calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice);
+  
+  // Check if this is a V4 token (poolAddress is the V4_MANAGER)
+  const isV4 = poolAddress?.toLowerCase() === V4_MANAGER.toLowerCase();
+  
+  // Fetch global trades, revenue, and volume in parallel
+  const [tokenTrades, revenue, volumeData] = await Promise.all([
+    fetchTokenTrades(address, chain),
+    calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice),
+    isV4
+      ? fetchTotalVolume(address, chain)
+      : poolAddress
+        ? fetchPoolVolume(poolAddress, chain, address).then(v => ({ volumeEth: v, poolName: "" }))
+        : Promise.resolve({ volumeEth: "0", poolName: "" })
+  ]);
+
+  const volumeEth = volumeData.volumeEth;
+  const poolName = volumeData.poolName || undefined;
 
   return {
     token: tokenInfo,
     taxRates,
     feeWallets,
-    feeIncome,
-    allWalletIncome: feeIncome, // Provide as duplicate for compatibility if needed, though UI won't toggle
+    feeIncome: revenue, // Current specific token focus
+    allWalletIncome: revenue, // Legacy global fallback
+    tokenTrades: tokenTrades,
+    volumeEth,
+    poolName,
     poolAddress,
     platform,
     subPlatform,

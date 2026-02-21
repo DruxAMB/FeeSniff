@@ -107,13 +107,14 @@ function TaxBadge({ label, value }: { label: string; value: number }) {
 
 export default function ResultsView({ result, onBack }: ResultsViewProps) {
     const [currentPage, setCurrentPage] = useState(1);
+    const [txView, setTxView] = useState<"creator" | "token">("creator");
+    const activeIncome = result.feeIncome;
     const ITEMS_PER_PAGE = 10;
 
     const chain = CHAINS.find((c) => c.id === result.chain);
     const explorerUrl = chain?.explorerUrl || "https://basescan.org";
 
-    const activeIncome = result.feeIncome;
-    const allTxs = activeIncome.recentTxs;
+    const allTxs = txView === "creator" ? result.feeIncome.recentTxs : result.tokenTrades;
 
     const totalPages = Math.ceil(allTxs.length / ITEMS_PER_PAGE);
     const paginatedTxs = allTxs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -201,6 +202,14 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </p>
                         <p className="text-sm font-mono font-medium" style={{ color: "var(--text-secondary)" }}>
                             {formatNumber(result.token.totalSupply)}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                            Total Volume
+                        </p>
+                        <p className="text-sm font-mono font-medium" style={{ color: "var(--text-secondary)" }}>
+                            {formatNumber(result.volumeEth || "0")} {chain?.nativeSymbol || "ETH"}
                         </p>
                     </div>
                     {result.token.deployer && (
@@ -403,22 +412,54 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
             )}
 
             {/* ── Recent Transactions ────────────────── */}
-            {activeIncome.recentTxs.length > 0 && (
+            {allTxs.length > 0 && (
                 <div className="glass-card p-6">
-                    <h3
-                        className="text-sm font-semibold mb-4 flex items-center gap-2"
-                        style={{ color: "var(--text-secondary)" }}
-                    >
-                        <Clock className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
-                        Recent Creator Transactions (Global)
-                    </h3>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <h3
+                            className="text-sm font-semibold flex items-center gap-2"
+                            style={{ color: "var(--text-secondary)" }}
+                        >
+                            <Clock className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                            Transaction History
+                        </h3>
+
+                        {/* Tab Switcher */}
+                        <div
+                            className="flex p-1 rounded-xl w-fit border border-(--border-subtle)"
+                            style={{ background: "var(--bg-secondary)" }}
+                        >
+                            <button
+                                onClick={() => { setTxView("creator"); setCurrentPage(1); }}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "creator"
+                                    ? "bg-accent-primary text-bg-primary shadow-sm"
+                                    : "text-text-muted hover:text-text-primary"
+                                    }`}
+                            >
+                                Creator Revenue
+                            </button>
+                            <button
+                                onClick={() => { setTxView("token"); setCurrentPage(1); }}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "token"
+                                    ? "bg-accent-primary text-bg-primary shadow-sm"
+                                    : "text-text-muted hover:text-text-primary"
+                                    }`}
+                            >
+                                ${result.token.symbol} Trades
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr style={{ color: "var(--text-muted)" }}>
                                     <th className="text-left py-2 pr-4 font-medium text-xs">Tx Hash</th>
-                                    <th className="text-left py-2 pr-4 font-medium text-xs">From</th>
-                                    <th className="text-right py-2 pr-4 font-medium text-xs">Amount</th>
+                                    <th className="text-left py-2 pr-4 font-medium text-xs">
+                                        {txView === "creator" ? "From (Payer)" : "From"}
+                                    </th>
+                                    <th className="text-right py-2 pr-4 font-medium text-xs">
+                                        {txView === "creator" ? "Amount (WETH)" : "Amount"}
+                                    </th>
                                     <th className="text-right py-2 font-medium text-xs">Time</th>
                                 </tr>
                             </thead>
@@ -449,7 +490,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                             className="py-2.5 pr-4 text-right font-mono font-medium"
                                             style={{ color: "var(--text-primary)" }}
                                         >
-                                            {formatNumber(tx.value)} {chain?.nativeSymbol || "WETH"}
+                                            {formatNumber(tx.value)} {txView === "creator" ? (chain?.nativeSymbol || "WETH") : result.token.symbol}
                                         </td>
                                         <td
                                             className="py-2.5 text-right"

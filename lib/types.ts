@@ -60,6 +60,9 @@ export type AnalysisResult = {
   chain: string;
   contractVerified: boolean;
   contractAddress: string;
+  tokenTrades: FeeTransaction[];
+  volumeEth?: string;
+  poolName?: string;
   platform?: "clanker" | "wow" | "bankr" | "generic";
   subPlatform?: string;
 };
