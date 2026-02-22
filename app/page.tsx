@@ -70,10 +70,10 @@ export default function Home() {
           <Image src="/logo.gif" height={100} width={100} alt="" className="rounded-xl" unoptimized />
         </div>
         <h1 className="text-5xl sm:text-6xl font-bold mb-3 gradient-text">
-          FeeSniff
+          tokenSniff
         </h1>
         <p
-          className="text-lg max-w-md mx-auto mb-10"
+          className="text-lg max-w-lg mx-auto mb-10"
           style={{ color: "var(--text-secondary)" }}
         >
           See how much token creators earn in fees.
@@ -188,6 +188,22 @@ export default function Home() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── Footer ───────────────────────────────── */}
+      <footer className="mt-12 mb-8 text-center space-y-4 opacity-40 hover:opacity-100 transition-opacity">
+
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          built with love by{" "}
+          <a
+            href="https://druxamb.dev/contact"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary transition-colors font-medium underline underline-offset-4"
+          >
+            DruxAMB
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }

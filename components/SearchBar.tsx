@@ -128,7 +128,7 @@ export default function SearchBar({ onSubmit, isLoading }: SearchBarProps) {
                         className="w-full pl-10 pr-3 py-2.5 bg-transparent text-sm outline-none"
                         style={{
                             color: "var(--text-primary)",
-                            fontFamily: "var(--font-geist-mono)",
+                            // fontFamily: "var(--font-geist-mono)",
                         }}
                         spellCheck={false}
                         autoComplete="off"

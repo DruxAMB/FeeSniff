@@ -62,26 +62,55 @@ export default function TokenMarquee() {
         </div>
     );
 
+    const launchContent = (
+        <div className="flex items-center gap-10 text-[10px] font-bold whitespace-nowrap px-4">
+            <span className="flex items-center gap-2 uppercase tracking-wider">
+                <span className="animate-pulse">👃🏽</span>
+                <span className="gradient-text font-black">$SNIFF LAUNCH:</span>
+                <span style={{ color: "var(--text-secondary)" }}>Wednesday 25th Feb @ 7pm UTC</span>
+            </span>
+            <span style={{ color: "var(--border-subtle)" }} className="opacity-30">•</span>
+        </div>
+    );
+
     return (
         <div
-            className="fixed top-0 left-0 right-0 z-100 h-9 flex items-center overflow-hidden border-b border-(--border-subtle) backdrop-blur-md"
+            className="fixed top-0 left-0 right-0 z-100 h-9 flex flex-col overflow-hidden border-b border-(--border-subtle) backdrop-blur-md"
         >
-            <motion.div
-                className="flex"
-                animate={{
-                    x: ["0%", "-50%"],
-                }}
-                transition={{
-                    duration: 100,
-                    repeat: Infinity,
-                    ease: "linear",
-                }}
-            >
-                {/* Multiplication to fill the marquee width */}
-                {Array.from({ length: 12 }).map((_, i) => (
-                    <div key={i}>{content}</div>
-                ))}
-            </motion.div>
+            {/* Top Row: Token Stats - Commented out for now
+            <div className="flex-1 flex items-center border-b border-(--border-subtle)/30">
+                <motion.div
+                    className="flex"
+                    animate={{ x: ["0%", "-50%"] }}
+                    transition={{
+                        duration: 80,
+                        repeat: Infinity,
+                        ease: "linear",
+                    }}
+                >
+                    {Array.from({ length: 12 }).map((_, i) => (
+                        <div key={i}>{content}</div>
+                    ))}
+                </motion.div>
+            </div>
+            */}
+
+            {/* Bottom Row: Launch News */}
+            <div className="flex-1 flex items-center">
+                <motion.div
+                    className="flex"
+                    animate={{ x: ["-50%", "0%"] }} // Scroll reverse for visual interest
+                    transition={{
+                        duration: 100,
+                        repeat: Infinity,
+                        ease: "linear",
+                    }}
+                >
+                    {Array.from({ length: 12 }).map((_, i) => (
+                        <div key={i}>{launchContent}</div>
+                    ))}
+                </motion.div>
+            </div>
         </div>
     );
 }
