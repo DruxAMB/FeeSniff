@@ -8,6 +8,8 @@ export type ChainConfig = {
   wethAddress: string;
   uniV3Factory: string;
   clankerLocker?: string;
+  clankerLockerFeeConversion?: string;
+  clankerLpLocker?: string;
   nativeSymbol: string;
   icon: string;
   enabled: boolean;

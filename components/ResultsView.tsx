@@ -12,6 +12,7 @@ import {
     Check,
     ChevronLeft,
     ChevronRight,
+    ArrowRightLeft,
 } from "lucide-react";
 import { useState } from "react";
 import type { AnalysisResult } from "@/lib/types";
@@ -166,15 +167,30 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                     </div>
 
                     <div className="text-right flex md:flex-col items-end gap-2">
-                        <span
-                            className="px-2.5 py-1 rounded-lg text-xs font-bold border border-(--border-subtle)"
-                            style={{
-                                background: "var(--bg-secondary)",
-                                color: "var(--text-primary)",
-                            }}
-                        >
-                            {result.contractVerified ? "✓ Verified" : "⚠ Unverified"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                            <a
+                                href={`https://app.uniswap.org/explore/tokens/${result.chain}/${result.contractAddress}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 border border-[#ff007a33] hover:border-[#ff007a66]"
+                                style={{
+                                    background: "rgba(255, 0, 122, 0.08)",
+                                    color: "#ff007a",
+                                }}
+                            >
+                                <ArrowRightLeft className="h-3.5 w-3.5" />
+                                Trade
+                            </a>
+                            <span
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold border border-(--border-subtle)"
+                                style={{
+                                    background: "var(--bg-secondary)",
+                                    color: "var(--text-primary)",
+                                }}
+                            >
+                                {result.contractVerified ? "✓ Verified" : "⚠ Unverified"}
+                            </span>
+                        </div>
                         {result.platform && result.platform !== "generic" && (
                             <span
                                 className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5"
@@ -184,79 +200,11 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                     color: result.platform === "bankr" ? "#3b82f6" : "#22c55e"
                                 }}
                             >
-                                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: result.platform === "bankr" ? "#3b82f6" : "#22c55e" }}></span>
-                                {result.platform === "bankr" ? `Bankr ${result.subPlatform === "doppler" ? "Doppler" : "Clanker v4"}` : result.platform} Optimized
+                                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: result.platform === "bankr" ? "#3b82f6" : result.platform === "clanker" ? "#22c55e" : "#9ca3af" }}></span>
+                                {result.platform === "bankr" ? `Bankr ${result.subPlatform === "doppler" ? "Doppler" : "Clanker v4"} Optimized` : result.platform === "clanker" ? "Clanker" : result.platform}
                             </span>
                         )}
                     </div>
-                </div>
-
-                {/* Token details */}
-                <div
-                    className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4 pt-4"
-                    style={{ borderTop: "1px solid var(--border-subtle)" }}
-                >
-                    <div>
-                        <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
-                            Total Supply
-                        </p>
-                        <p className="text-sm font-mono font-medium" style={{ color: "var(--text-secondary)" }}>
-                            {formatNumber(result.token.totalSupply)}
-                        </p>
-                    </div>
-                    <div>
-                        <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
-                            Total Volume
-                        </p>
-                        <p className="text-sm font-mono font-medium" style={{ color: "var(--text-secondary)" }}>
-                            {formatNumber(result.volumeEth || "0")} {chain?.nativeSymbol || "ETH"}
-                        </p>
-                    </div>
-                    {result.token.deployer && (
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
-                                Deployer
-                            </p>
-                            <div className="flex items-center gap-1">
-                                <p
-                                    className="text-sm font-mono font-medium"
-                                    style={{ color: "var(--text-secondary)" }}
-                                >
-                                    {truncateAddress(result.token.deployer)}
-                                </p>
-                                <CopyButton text={result.token.deployer} />
-                            </div>
-                        </div>
-                    )}
-                    {result.token.deployedAt && (
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
-                                Deployed
-                            </p>
-                            <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
-                                {new Date(result.token.deployedAt).toLocaleDateString()}
-                            </p>
-                        </div>
-                    )}
-                    {result.poolAddress && (
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
-                                LP Pool
-                            </p>
-                            <div className="flex items-center gap-1">
-                                <a
-                                    href={`${explorerUrl}/address/${result.poolAddress}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-sm font-mono font-medium transition-colors"
-                                    style={{ color: "var(--accent-primary)" }}
-                                >
-                                    {truncateAddress(result.poolAddress)}
-                                </a>
-                                <CopyButton text={result.poolAddress} />
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -284,24 +232,24 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         <div className="glass-card p-8 text-center border-2 border-(--border-strong)">
                             <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
                                 <TrendingUp className="inline h-4 w-4 mr-1" />
-                                Total Fees Claimed (Platform Global)
+                                Total Fees Withdrawn (All Tokens)
                             </p>
                             <p className="text-4xl font-bold gradient-text mb-1">
-                                {formatNumber((parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "WETH"}
-                                {(parseFloat(activeIncome.totalEth) + parseFloat(activeIncome.unclaimedEth || "0")) === 0 && activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
+                                {formatNumber((parseFloat(result.allWalletIncome?.totalEth || activeIncome.totalEth) + parseFloat(result.allWalletIncome?.unclaimedEth || activeIncome.unclaimedEth || "0")).toString())} {chain?.nativeSymbol || "WETH"}
+                                {(parseFloat(result.allWalletIncome?.totalEth || activeIncome.totalEth) + parseFloat(result.allWalletIncome?.unclaimedEth || activeIncome.unclaimedEth || "0")) === 0 && activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
                                     <span className="text-sm align-middle ml-2" style={{ color: "var(--status-green)" }}>
                                         + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol}
                                     </span>
                                 )}
                             </p>
-                            {(activeIncome.totalUsd || activeIncome.unclaimedUsd) && (parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")) > 0 && (
+                            {(result.allWalletIncome?.totalUsd || result.allWalletIncome?.unclaimedUsd || activeIncome.totalUsd || activeIncome.unclaimedUsd) && (parseFloat(result.allWalletIncome?.totalUsd || activeIncome.totalUsd || "0") + parseFloat(result.allWalletIncome?.unclaimedUsd || activeIncome.unclaimedUsd || "0")) > 0 && (
                                 <p className="text-lg font-medium" style={{ color: "var(--text-secondary)" }}>
-                                    ≈ ${(parseFloat(activeIncome.totalUsd || "0") + parseFloat(activeIncome.unclaimedUsd || "0")).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ≈ ${(parseFloat(result.allWalletIncome?.totalUsd || activeIncome.totalUsd || "0") + parseFloat(result.allWalletIncome?.unclaimedUsd || activeIncome.unclaimedUsd || "0")).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                             )}
                             <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
-                                {activeIncome.txCount > 0 ? (
-                                    `Across ${activeIncome.txCount} transaction${activeIncome.txCount !== 1 ? "s" : ""}`
+                                {(result.allWalletIncome?.txCount || activeIncome.txCount) > 0 ? (
+                                    `Across ${result.allWalletIncome?.txCount || activeIncome.txCount} transaction${(result.allWalletIncome?.txCount || activeIncome.txCount) !== 1 ? "s" : ""}`
                                 ) : (
                                     activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0
                                         ? "Current token rewards listed below"
@@ -314,7 +262,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                 <div className="mt-6 pt-6 border-t border-(--border-subtle) grid grid-cols-2 gap-4">
                                     <div className="text-left">
                                         <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
-                                            Global Claimed
+                                            Claimed
                                         </p>
                                         <p className="text-lg font-bold" style={{ color: "var(--text-secondary)" }}>
                                             {formatNumber(activeIncome.totalEth)} {chain?.nativeSymbol}
@@ -322,7 +270,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                     </div>
                                     <div className="text-right">
                                         <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
-                                            Available in Locker
+                                            UNCLAIMED
                                         </p>
                                         <p className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
                                             {formatNumber(activeIncome.unclaimedEth)} {chain?.nativeSymbol}

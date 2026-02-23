@@ -14,6 +14,8 @@ export const CHAINS: ChainConfig[] = [
     wethAddress: "0x4200000000000000000000000000000000000006",
     uniV3Factory: "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
     clankerLocker: "0xF3622742b1E446D92e45E22923Ef11C2fcD55D68",
+    clankerLockerFeeConversion: "0x63D2DfEA64b3433F4071A98665bcD7Ca14d93496",
+    clankerLpLocker: "0x29d17C1A8D851d7d4cA97FAe97AcAdb398D9cCE0",
     nativeSymbol: "ETH",
     icon: "🟦",
     enabled: true,

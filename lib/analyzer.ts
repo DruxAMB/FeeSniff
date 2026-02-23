@@ -362,11 +362,6 @@ export async function detectFeeWallets(
     return [];
   }
 
-  // Log all available functions for debugging
-  const allFunctions = iface.fragments
-    .filter((f): f is ethers.FunctionFragment => f.type === "function")
-    .map((f) => f.name);
-
   const wallets: FeeWallet[] = [];
   const seen = new Set<string>();
 
@@ -375,7 +370,7 @@ export async function detectFeeWallets(
     if (
       ethers.isAddress(lower) &&
       lower !== ethers.ZeroAddress.toLowerCase() &&
-      lower !== address.toLowerCase() && // Skip the token contract itself
+      lower !== address.toLowerCase() &&
       !seen.has(lower)
     ) {
       seen.add(lower);
@@ -383,69 +378,77 @@ export async function detectFeeWallets(
     }
   };
 
-  // Pass 1: Try known fee wallet getter names
-  for (const getterName of FEE_WALLET_GETTERS) {
-    try {
-      iface.getFunction(getterName);
-      const result = await contract[getterName]();
-      addWallet(String(result), humanizeGetterName(getterName));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message.substring(0, 80) : String(err);
-      // Only log if the function exists in ABI (getFunction didn't throw)
-      if (iface.hasFunction(getterName)) {
+  // Pass 1: Try known fee wallet getter names — ALL IN PARALLEL
+  const knownGetters = FEE_WALLET_GETTERS.filter(name => {
+    try { iface.getFunction(name); return true; } catch { return false; }
+  });
+
+  if (knownGetters.length > 0) {
+    const results = await Promise.allSettled(
+      knownGetters.map(async (name) => {
+        const result = await contract[name]();
+        return { name, value: String(result) };
+      })
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        addWallet(r.value.value, humanizeGetterName(r.value.name));
       }
     }
   }
 
-  // Pass 2: If no known getters matched, scan ALL zero-arg functions that return an address
+  // Pass 2: If no known getters matched, scan ALL zero-arg address functions — IN PARALLEL
   if (wallets.length === 0) {
-    for (const fragment of iface.fragments) {
-      if (fragment.type !== "function") continue;
-      const fn = fragment as ethers.FunctionFragment;
-      // Accept view OR pure, and also try nonpayable (some admin getters aren't marked view)
-      if (
-        fn.inputs.length === 0 &&
-        fn.outputs?.length === 1 &&
-        fn.outputs[0].type === "address" &&
-        !SKIP_ADDRESS_FUNCTIONS.has(fn.name)
-      ) {
-        try {
+    const addressFns = iface.fragments
+      .filter((f): f is ethers.FunctionFragment => {
+        if (f.type !== "function") return false;
+        const fn = f as ethers.FunctionFragment;
+        return fn.inputs.length === 0 &&
+          fn.outputs?.length === 1 &&
+          fn.outputs![0].type === "address" &&
+          !SKIP_ADDRESS_FUNCTIONS.has(fn.name);
+      });
+
+    if (addressFns.length > 0) {
+      const results = await Promise.allSettled(
+        addressFns.map(async (fn) => {
           const result = await contract[fn.name]();
-          addWallet(String(result), humanizeGetterName(fn.name));
-        } catch (err) {
+          return { name: fn.name, value: String(result) };
+        })
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          addWallet(r.value.value, humanizeGetterName(r.value.name));
         }
       }
     }
   }
 
-  // Pass 3: Try reading proxy storage slots (EIP-1967) and allData()
+  // Pass 3: Try proxy storage slots (EIP-1967) and allData()
   if (wallets.length === 0) {
     const ADMIN_SLOT = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
-    try {
-      const slotData = await provider.getStorage(address, ADMIN_SLOT);
-      if (slotData && slotData !== ethers.ZeroHash) {
-        const adminAddr = "0x" + slotData.slice(26); // Extract address from 32-byte slot
-        addWallet(adminAddr, "Proxy Admin");
-      }
-    } catch {}
+    
+    const [slotResult, allDataResult] = await Promise.allSettled([
+      provider.getStorage(address, ADMIN_SLOT),
+      iface.hasFunction("allData") && iface.getFunction("allData")?.inputs.length === 0
+        ? contract.allData()
+        : Promise.resolve(null),
+    ]);
 
-    // Try allData() — Clanker tokens often have this returning a tuple with creator info
-    try {
-      if (iface.hasFunction("allData")) {
-        const allDataFn = iface.getFunction("allData");
-        if (allDataFn && allDataFn.inputs.length === 0) {
-          const result = await contract.allData();
-          // Parse result: could be a tuple/array — scan for any address-like values
-          const resultArray = Array.isArray(result) ? result : [result];
-          for (const val of resultArray) {
-            const strVal = String(val);
-            if (ethers.isAddress(strVal)) {
-              addWallet(strVal, "Creator (from allData)");
-            }
-          }
+    if (slotResult.status === "fulfilled" && slotResult.value && slotResult.value !== ethers.ZeroHash) {
+      const adminAddr = "0x" + slotResult.value.slice(26);
+      addWallet(adminAddr, "Proxy Admin");
+    }
+
+    if (allDataResult.status === "fulfilled" && allDataResult.value) {
+      const resultArray = Array.isArray(allDataResult.value) ? allDataResult.value : [allDataResult.value];
+      for (const val of resultArray) {
+        const strVal = String(val);
+        if (ethers.isAddress(strVal)) {
+          addWallet(strVal, "Creator (from allData)");
         }
       }
-    } catch {}
+    }
   }
 
   return wallets;
@@ -464,52 +467,75 @@ export async function findLPPool(
   const token = tokenAddress.toLowerCase();
   const weth = chain.wethAddress.toLowerCase();
 
-  // 1. Try Uniswap V3
+  // Fire ALL pool lookups in parallel: V3 fee tiers + Aerodrome ticks + V4 detection
+  type PoolQuery = { priority: number; promise: Promise<string | null> };
+  const queries: PoolQuery[] = [];
+
+  // 1. Uniswap V3 — all fee tiers in parallel
   if (chain.uniV3Factory) {
     const factory = new ethers.Contract(chain.uniV3Factory, ["function getPool(address,address,uint24) view returns (address)"], provider);
-    for (const fee of UNI_V3_FEE_TIERS) {
-      try {
-        const pool = await factory.getPool(token, weth, fee);
-        if (pool && pool !== ethers.ZeroAddress) {
-          return pool;
-        }
-      } catch {}
+    for (let i = 0; i < UNI_V3_FEE_TIERS.length; i++) {
+      const fee = UNI_V3_FEE_TIERS[i];
+      queries.push({
+        priority: i, // V3 pools have highest priority (lowest number)
+        promise: factory.getPool(token, weth, fee)
+          .then((pool: string) => (pool && pool !== ethers.ZeroAddress) ? pool : null)
+          .catch(() => null),
+      });
     }
   }
 
-  // 2. Try Aerodrome Slipstream (Base specific)
+  // 2. Aerodrome Slipstream (Base specific)
   if (chain.id === "base") {
     const AERO_FACTORY = "0x5e7913A4DA51ad571d76c625Bc283b0B20a84493";
     const factory = new ethers.Contract(AERO_FACTORY, ["function getPool(address,address,int24) view returns (address)"], provider);
-    for (const tick of AERO_SLIPSTREAM_TICKS) {
-      try {
-        const pool = await factory.getPool(token, weth, tick);
-        if (pool && pool !== ethers.ZeroAddress) {
-          return pool;
-        }
-      } catch {}
+    for (let i = 0; i < AERO_SLIPSTREAM_TICKS.length; i++) {
+      const tick = AERO_SLIPSTREAM_TICKS[i];
+      queries.push({
+        priority: 100 + i, // Aerodrome after V3
+        promise: factory.getPool(token, weth, tick)
+          .then((pool: string) => (pool && pool !== ethers.ZeroAddress) ? pool : null)
+          .catch(() => null),
+      });
     }
   }
 
-  // 3. Try Uniswap v4 detection (Look for interaction with PoolManager)
-  // If we find transfers to the PoolManager, we treat the Manager as the "pool" for volume tracking
-  try {
-    const v4Data = (await explorerFetch(chain, {
-      module: "account",
-      action: "tokentx",
-      address: V4_MANAGER,
-      contractaddress: tokenAddress,
-      page: "1",
-      offset: "1",
-      sort: "desc"
-    })) as { status: string; result: any[] };
+  // 3. Uniswap V4 detection
+  queries.push({
+    priority: 200, // V4 has lowest priority
+    promise: (async () => {
+      try {
+        const v4Data = (await explorerFetch(chain, {
+          module: "account",
+          action: "tokentx",
+          address: V4_MANAGER,
+          contractaddress: tokenAddress,
+          page: "1",
+          offset: "1",
+          sort: "desc"
+        })) as { status: string; result: any[] };
+        return (v4Data.status === "1" && v4Data.result.length > 0) ? V4_MANAGER : null;
+      } catch {
+        return null;
+      }
+    })(),
+  });
 
-    if (v4Data.status === "1" && v4Data.result.length > 0) {
-      return V4_MANAGER;
+  // Await all and return highest-priority match
+  const results = await Promise.allSettled(queries.map(q => q.promise));
+  
+  let bestPool: string | null = null;
+  let bestPriority = Infinity;
+  
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "fulfilled" && result.value && queries[i].priority < bestPriority) {
+      bestPool = result.value;
+      bestPriority = queries[i].priority;
     }
-  } catch {}
+  }
 
-  return null;
+  return bestPool;
 }
 
 // ─── Blockscout API helper ──────────────────────────────────
@@ -914,6 +940,146 @@ export async function getUnclaimedFees(
   }
 }
 
+// ─── Per-Token Claimed Fees via ClaimedRewards Events ───────
+
+// ClaimedRewards(address indexed token, uint256 amount0, uint256 amount1, uint256[] rewards0, uint256[] rewards1)
+const CLAIMED_REWARDS_TOPIC0 = "0x21d15f71483b597e8f0009e83b90b2117f6f98c185d7173857dddcae5eb8546a";
+
+interface ClaimedRewardsResult {
+  totalClaimedWeth: string;
+  txs: FeeTransaction[];
+}
+
+async function fetchClaimedRewardsForToken(
+  tokenAddress: string,
+  chain: ChainConfig
+): Promise<ClaimedRewardsResult> {
+  const emptyResult: ClaimedRewardsResult = { totalClaimedWeth: "0", txs: [] };
+  
+  // Collect locker addresses that emit ClaimedRewards
+  const lockerAddresses: string[] = [];
+  if (chain.clankerLockerFeeConversion) lockerAddresses.push(chain.clankerLockerFeeConversion);
+  if (chain.clankerLpLocker) lockerAddresses.push(chain.clankerLpLocker);
+  if (lockerAddresses.length === 0) return emptyResult;
+
+  const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+  const CHUNK_SIZE = 49999;
+
+  // Step 1: Find the token's creation block via Blockscout tokentx (first transfer)
+  let creationBlock = 0;
+  try {
+    const blockscoutV1 = chain.blockscoutApi?.replace("/v2", "");
+    const url = `${blockscoutV1}?module=account&action=tokentx&contractaddress=${tokenAddress}&page=1&offset=1&sort=asc`;
+    const res = await fetch(url);
+    const data = await res.json() as { status: string; result?: any[] };
+    if (data.status === "1" && data.result?.[0]?.blockNumber) {
+      creationBlock = parseInt(data.result[0].blockNumber);
+    }
+  } catch {}
+
+  if (creationBlock === 0) return emptyResult;
+
+  const currentBlock = await provider.getBlockNumber();
+
+  // Step 2: Prepare topic filters
+  const topic1 = ethers.zeroPadValue(tokenAddress.toLowerCase(), 32);
+  const wethAddr = chain.wethAddress.toLowerCase();
+  const tokenAddr = tokenAddress.toLowerCase();
+  // In Uniswap V4, token0 < token1 by address sort order
+  const wethIsToken1 = tokenAddr < wethAddr;
+
+  let totalWethWei = 0n;
+  const txs: FeeTransaction[] = [];
+  const seenHashes = new Set<string>();
+
+  // Step 3: Build all chunk queries across all lockers, then fire in parallel batches
+  type ChunkQuery = { lockerAddr: string; fromBlock: number; toBlock: number };
+  const allChunks: ChunkQuery[] = [];
+  
+  for (const lockerAddr of lockerAddresses) {
+    let fromBlock = creationBlock;
+    while (fromBlock <= currentBlock) {
+      const toBlock = Math.min(fromBlock + CHUNK_SIZE, currentBlock);
+      allChunks.push({ lockerAddr, fromBlock, toBlock });
+      fromBlock = toBlock + 1;
+    }
+  }
+
+  // Fire chunks in parallel batches of 6 to avoid RPC rate limits
+  const BATCH_SIZE = 6;
+  for (let i = 0; i < allChunks.length; i += BATCH_SIZE) {
+    const batch = allChunks.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(chunk =>
+        provider.getLogs({
+          address: chunk.lockerAddr,
+          topics: [CLAIMED_REWARDS_TOPIC0, topic1],
+          fromBlock: chunk.fromBlock,
+          toBlock: chunk.toBlock,
+        })
+      )
+    );
+
+    for (let j = 0; j < results.length; j++) {
+      const result = results[j];
+      if (result.status !== "fulfilled") continue;
+      
+      for (const log of result.value) {
+        const logData = log.data;
+        if (!logData || logData.length < 130) continue;
+
+        const amount0 = BigInt("0x" + logData.slice(2, 66));
+        const amount1 = BigInt("0x" + logData.slice(66, 130));
+        const wethAmount = wethIsToken1 ? amount1 : amount0;
+        totalWethWei += wethAmount;
+
+        if (!seenHashes.has(log.transactionHash)) {
+          seenHashes.add(log.transactionHash);
+          txs.push({
+            hash: log.transactionHash,
+            value: ethers.formatEther(wethAmount),
+            timestamp: log.blockNumber,
+            from: batch[j].lockerAddr,
+          });
+        }
+      }
+    }
+  }
+
+  // Step 4: Batch-resolve block timestamps for claim transactions
+  if (txs.length > 0) {
+    const uniqueBlocks = [...new Set(txs.map(t => t.timestamp))];
+    const blockTimestamps = new Map<number, number>();
+    
+    // Resolve up to 20 unique blocks in parallel
+    const blocksToResolve = uniqueBlocks.slice(0, 20);
+    const blockResults = await Promise.allSettled(
+      blocksToResolve.map(async (bn) => {
+        const block = await provider.getBlock(bn);
+        return { blockNumber: bn, timestamp: block?.timestamp || 0 };
+      })
+    );
+    
+    for (const result of blockResults) {
+      if (result.status === "fulfilled") {
+        blockTimestamps.set(result.value.blockNumber, result.value.timestamp);
+      }
+    }
+
+    for (const tx of txs) {
+      tx.timestamp = blockTimestamps.get(tx.timestamp) || tx.timestamp;
+    }
+  }
+
+  // Sort by timestamp descending
+  txs.sort((a, b) => b.timestamp - a.timestamp);
+
+  return {
+    totalClaimedWeth: ethers.formatEther(totalWethWei),
+    txs,
+  };
+}
+
 // ─── Fee wallet income tracking ─────────────────────────────
 
 export async function getFeeWalletIncome(
@@ -1019,7 +1185,8 @@ async function calculateCombinedIncome(
   chain: ChainConfig,
   tokenAddress?: string | null,
   poolAddress?: string | null,
-  ethPrice?: number | null
+  ethPrice?: number | null,
+  isV4?: boolean
 ): Promise<FeeIncome> {
   if (feeWallets.length === 0) {
     return { 
@@ -1029,6 +1196,36 @@ async function calculateCombinedIncome(
     };
   }
 
+  // For V4 Clanker tokens, use ClaimedRewards events for per-token claimed fees
+  if (isV4 && tokenAddress) {
+    const [claimedResult, ...unclaimedResults] = await Promise.all([
+      fetchClaimedRewardsForToken(tokenAddress, chain),
+      ...feeWallets.map(w => getUnclaimedFees(w.address, tokenAddress, chain)),
+    ]);
+
+    let totalUnclaimedWei = 0n;
+    for (const unclaimed of unclaimedResults) {
+      if (unclaimed.unclaimedEth && parseFloat(unclaimed.unclaimedEth) > 0) {
+        totalUnclaimedWei += ethers.parseEther(unclaimed.unclaimedEth);
+      }
+    }
+
+    const claimedEthValue = parseFloat(claimedResult.totalClaimedWeth);
+    const unclaimedEthValue = parseFloat(ethers.formatEther(totalUnclaimedWei));
+
+    return {
+      totalEth: claimedResult.totalClaimedWeth,
+      totalUsd: ethPrice ? (claimedEthValue * ethPrice).toFixed(2) : null,
+      unclaimedEth: ethers.formatEther(totalUnclaimedWei),
+      unclaimedUsd: ethPrice ? (unclaimedEthValue * ethPrice).toFixed(2) : null,
+      unclaimedTokenAmount: unclaimedResults[0]?.unclaimedTokenAmount,
+      tokenSymbol: unclaimedResults[0]?.tokenSymbol,
+      txCount: claimedResult.txs.length,
+      recentTxs: claimedResult.txs.slice(0, 500),
+    };
+  }
+
+  // Non-V4 tokens: use existing Blockscout transaction history approach
   const incomes = await Promise.all(
     feeWallets.map((w) => getFeeWalletIncome(w.address, chain, tokenAddress, poolAddress))
   );
@@ -1057,7 +1254,7 @@ async function calculateCombinedIncome(
     totalUsd: ethPrice ? (claimedEth * ethPrice).toFixed(2) : null,
     unclaimedEth: ethers.formatEther(totalUnclaimedWei),
     unclaimedUsd: ethPrice ? (unclaimedEthValue * ethPrice).toFixed(2) : null,
-    unclaimedTokenAmount: incomes[0]?.unclaimedTokenAmount, // Use the first wallet's token rewards as primary
+    unclaimedTokenAmount: incomes[0]?.unclaimedTokenAmount,
     tokenSymbol: incomes[0]?.tokenSymbol,
     txCount: totalTxCount,
     recentTxs: allRecentTxs.slice(0, 500),
@@ -1087,15 +1284,12 @@ export async function analyzeToken(
     tokenInfo.deployedAt = deployerInfo.deployedAt;
   }
 
-  // Step 3: If verified, detect tax rates & fee wallets
+  // Step 3: If verified, detect fee wallets
   let taxRates: TaxRates | null = null;
   let feeWallets: FeeWallet[] = [];
 
   if (source.verified && source.abi) {
-    [taxRates, feeWallets] = await Promise.all([
-      detectTaxRates(source.abi, address, chain),
-      detectFeeWallets(source.abi, address, chain),
-    ]);
+    feeWallets = await detectFeeWallets(source.abi, address, chain);
   }
 
   // Step 3b: If no fee wallets found, fallback to deployer as fee recipient
@@ -1160,6 +1354,17 @@ export async function analyzeToken(
     } catch (err) {
       // Different Clanker version might have different allData tuple
     }
+  }
+  // 2b. Clanker v3.1+ Detection (no allData, but contract named "ClankerToken")
+  else if (platform === "generic" && source.verified && source.sourceName === "ClankerToken") {
+    platform = "clanker";
+  }
+  // 2c. Clanker fallback: admin + context + verify signature combo
+  else if (platform === "generic" && source.verified &&
+    abiArray.some((f: any) => f.name === "admin") &&
+    abiArray.some((f: any) => f.name === "context") &&
+    abiArray.some((f: any) => f.name === "verify")) {
+    platform = "clanker";
   } 
   // 3. Wow Detection (Zora)
   else if (platform === "generic" && source.verified && abiArray.some((f: any) => f.name === "wowData")) {
@@ -1179,35 +1384,33 @@ export async function analyzeToken(
     poolAddress = await findLPPool(address, chain);
   }
 
-  // Step 5: Calculate fee income for the creator's wallets (Global Claimed + Token-Specific Unclaimed)
+  // Step 5: Calculate fee income
   const ethPrice = await getEthPrice();
   
   // Check if this is a V4 token (poolAddress is the V4_MANAGER)
   const isV4 = poolAddress?.toLowerCase() === V4_MANAGER.toLowerCase();
   
-  // Fetch global trades, revenue, and volume in parallel
-  const [tokenTrades, revenue, volumeData] = await Promise.all([
+  // Fetch trades and per-token revenue in parallel
+  // Volume is NOT fetched here — it's deferred because fetchTotalVolume
+  // can take 10-17+ minutes for high-trade V4 tokens (not displayed in UI anyway)
+  const [tokenTrades, perTokenRevenue, globalRevenue] = await Promise.all([
     fetchTokenTrades(address, chain),
-    calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice),
+    calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice, isV4),
+    // Global income: always uses Blockscout approach (~1s) — needed for hero metric
     isV4
-      ? fetchTotalVolume(address, chain)
-      : poolAddress
-        ? fetchPoolVolume(poolAddress, chain, address).then(v => ({ volumeEth: v, poolName: "" }))
-        : Promise.resolve({ volumeEth: "0", poolName: "" })
+      ? calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice, false)
+      : Promise.resolve(null),
   ]);
-
-  const volumeEth = volumeData.volumeEth;
-  const poolName = volumeData.poolName || undefined;
 
   return {
     token: tokenInfo,
     taxRates,
     feeWallets,
-    feeIncome: revenue, // Current specific token focus
-    allWalletIncome: revenue, // Legacy global fallback
+    feeIncome: perTokenRevenue,
+    allWalletIncome: globalRevenue || perTokenRevenue,
     tokenTrades: tokenTrades,
-    volumeEth,
-    poolName,
+    volumeEth: undefined,  // Deferred — fetched on demand via /api/volume
+    poolName: undefined,
     poolAddress,
     platform,
     subPlatform,

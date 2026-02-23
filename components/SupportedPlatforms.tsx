@@ -4,9 +4,9 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const ECOSYSTEMS = [
-    "Clanker",
-    "Wow (Zora)",
-    "Bankr"
+    "Clanker v4",
+    "Bankr Doppler",
+    "Bankr Clanker v4"
 ];
 
 export default function SupportedPlatforms() {
@@ -46,7 +46,7 @@ export default function SupportedPlatforms() {
                         initial={{ opacity: 0, y: -10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                        className="absolute top-full mt-4 z-101 w-[280px] sm:w-[320px]"
+                        className="absolute top-full mt-4 z-101 w-full max-w-xs sm:max-w-sm"
                     >
                         <div
                             className="p-5 rounded-2xl border border-(--border-subtle) shadow-2xl"
