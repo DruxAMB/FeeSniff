@@ -25,6 +25,20 @@ export const metadata: Metadata = {
     title: "TokenSniff — Token Fee Tracker",
     description: "See how much token creators earn in fees. Paste a contract address to start.",
     type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "tokenSniff Preview",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TokenSniff — Token Fee Tracker",
+    description: "See how much token creators earn in fees. Paste a contract address to start.",
+    images: ["/og-image.png"],
   },
 };
 
