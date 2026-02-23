@@ -70,7 +70,14 @@ export default function Home() {
         <div className="flex items-center justify-center gap-3 mb-4">
           <Image src="/logo.gif" height={100} width={100} alt="" className="rounded-xl" unoptimized />
         </div>
-        <h1 className="text-5xl sm:text-6xl font-bold mb-3 gradient-text">
+        <h1
+          className="text-5xl sm:text-6xl font-bold mb-3"
+          style={{
+            color: "var(--bg-primary)",
+            WebkitTextStroke: "18px var(--text-primary)",
+            paintOrder: "stroke fill",
+          }}
+        >
           tokenSniff
         </h1>
         <p

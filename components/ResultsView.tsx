@@ -201,7 +201,13 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                 }}
                             >
                                 <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: result.platform === "bankr" ? "#3b82f6" : result.platform === "clanker" ? "#22c55e" : "#9ca3af" }}></span>
-                                {result.platform === "bankr" ? `Bankr ${result.subPlatform === "doppler" ? "Doppler" : "Clanker v4"} Optimized` : result.platform === "clanker" ? "Clanker" : result.platform}
+                                {result.platform === "bankr"
+                                    ? `Bankr ${result.subPlatform === "doppler" ? "Doppler" : "Clanker v4"} Optimized`
+                                    : result.platform === "clanker" && result.poolAddress?.toLowerCase() === "0x498581ff718922c3f8e6a244956af099b2652b2b"
+                                        ? "Clanker v4 Optimized"
+                                        : result.platform === "clanker"
+                                            ? "Clanker v0 - v3"
+                                            : result.platform}
                             </span>
                         )}
                     </div>
