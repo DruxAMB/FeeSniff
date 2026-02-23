@@ -6,6 +6,7 @@ import SearchBar from "@/components/SearchBar";
 import ResultsView from "@/components/ResultsView";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import SupportedPlatforms from "@/components/SupportedPlatforms";
+import TermsOfService from "@/components/TermsOfService";
 import type { AnalysisResult, AnalysisError } from "@/lib/types";
 import Image from "next/image";
 
@@ -54,12 +55,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-40 py-12">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-32 py-12">
       {/* ── Persistent Hero & Search ─────────────────── */}
       <motion.div
         layout
         initial={false}
-        className="text-center w-full max-w-2xl mb-8"
+        className="text-center w-full max-w-2xl mb-5"
       >
         {state !== "results" && (
           <div className="mb-32">
@@ -73,7 +74,7 @@ export default function Home() {
           tokenSniff
         </h1>
         <p
-          className="text-lg max-w-lg mx-auto mb-10"
+          className="text-md sm:text-lg mx-auto mb-10"
           style={{ color: "var(--text-secondary)" }}
         >
           See how much token creators earn in fees.
@@ -190,7 +191,7 @@ export default function Home() {
       </div>
 
       {/* ── Footer ───────────────────────────────── */}
-      <footer className="mt-12 mb-8 text-center space-y-4 opacity-40 hover:opacity-100 transition-opacity">
+      <footer className="mt-8 text-center space-y-2 opacity-40 hover:opacity-100 transition-opacity">
 
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
           built with love by{" "}
@@ -203,6 +204,7 @@ export default function Home() {
             DruxAMB
           </a>
         </p>
+        <TermsOfService />
       </footer>
     </div>
   );

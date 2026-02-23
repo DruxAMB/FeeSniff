@@ -169,7 +169,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                     <div className="text-right flex md:flex-col items-end gap-2">
                         <div className="flex items-center gap-2">
                             <a
-                                href={`https://app.uniswap.org/explore/tokens/${result.chain}/${result.contractAddress}`}
+                                href={`https://app.uniswap.org/swap?outputCurrency=${result.contractAddress}&chain=${result.chain}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 border border-[#ff007a33] hover:border-[#ff007a66]"
