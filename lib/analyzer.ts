@@ -617,6 +617,68 @@ async function fetchBlockscoutIncomingTxs(
   }
 }
 
+async function fetchBlockscoutOutgoingTxs(
+  walletAddress: string,
+  chain: ChainConfig
+): Promise<{ txs: FeeTransaction[]; totalWei: bigint } | null> {
+  const baseUrl = `${chain.blockscoutApi}/addresses/${walletAddress}/transactions`;
+  let totalWei = 0n;
+  const txs: FeeTransaction[] = [];
+  const seenHashes = new Set<string>();
+  const normalAddr = walletAddress.toLowerCase();
+
+  let url: string | null = `${baseUrl}?filter=from`;
+  let pages = 0;
+  const MAX_PAGES = 5;
+
+  try {
+    while (url && pages < MAX_PAGES) {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+
+      const data = (await res.json()) as BlockscoutResponse;
+
+      for (const tx of data.items) {
+        if (
+          tx.status === "ok" &&
+          tx.from?.hash?.toLowerCase() === normalAddr &&
+          tx.value &&
+          BigInt(tx.value) > 0n
+        ) {
+          totalWei += BigInt(tx.value);
+          if (!seenHashes.has(tx.hash)) {
+            seenHashes.add(tx.hash);
+            txs.push({
+              hash: tx.hash,
+              value: ethers.formatEther(tx.value),
+              timestamp: Math.floor(new Date(tx.timestamp).getTime() / 1000),
+              from: tx.from.hash,
+              to: tx.to?.hash,
+              type: "withdrawal"
+            });
+          }
+        }
+      }
+
+      if (data.next_page_params) {
+        const params = new URLSearchParams();
+        params.set("filter", "from");
+        for (const [k, v] of Object.entries(data.next_page_params)) {
+          params.set(k, String(v));
+        }
+        url = `${baseUrl}?${params.toString()}`;
+      } else {
+        url = null;
+      }
+      pages++;
+    }
+
+    return { txs, totalWei };
+  } catch (err) {
+    return null;
+  }
+}
+
 // ─── Blockscout WETH token transfer tracking ────────────────
 
 type BlockscoutTokenTransfer = {
@@ -1080,6 +1142,70 @@ async function fetchClaimedRewardsForToken(
   };
 }
 
+async function fetchBlockscoutOutgoingToken(
+  walletAddress: string,
+  chain: ChainConfig,
+  tokenAddress: string
+): Promise<{ txs: FeeTransaction[]; totalWei: bigint } | null> {
+  const normalAddr = walletAddress.toLowerCase();
+  const baseUrl = `${chain.blockscoutApi}/addresses/${walletAddress}/token-transfers`;
+  let totalWei = 0n;
+  const txs: FeeTransaction[] = [];
+  const seenHashes = new Set<string>();
+
+  let url: string | null = `${baseUrl}?type=ERC-20&filter=from&token=${tokenAddress}`;
+  let pages = 0;
+  const MAX_PAGES = 5;
+
+  try {
+    while (url && pages < MAX_PAGES) {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+
+      const data = (await res.json()) as BlockscoutTokenTransferResponse;
+
+      for (const tx of data.items) {
+        if (
+          tx.from?.hash?.toLowerCase() === normalAddr &&
+          tx.total?.value &&
+          BigInt(tx.total.value) > 0n
+        ) {
+          totalWei += BigInt(tx.total.value);
+          if (!seenHashes.has(tx.transaction_hash)) {
+            seenHashes.add(tx.transaction_hash);
+            txs.push({
+              hash: tx.transaction_hash,
+              value: ethers.formatEther(tx.total.value),
+              timestamp: Math.floor(new Date(tx.timestamp).getTime() / 1000),
+              from: tx.from.hash,
+              to: tx.to?.hash,
+              type: "withdrawal"
+            });
+          }
+        }
+      }
+
+      if (data.next_page_params) {
+        const params = new URLSearchParams();
+        params.set("type", "ERC-20");
+        params.set("filter", "from");
+        params.set("token", tokenAddress);
+        for (const [k, v] of Object.entries(data.next_page_params)) {
+          params.set(k, String(v));
+        }
+        url = `${baseUrl}?${params.toString()}`;
+      } else {
+        url = null;
+      }
+      pages++;
+    }
+
+    return { txs, totalWei };
+  } catch (err) {
+    return null;
+  }
+}
+
 // ─── Fee wallet income tracking ─────────────────────────────
 
 export async function getFeeWalletIncome(
@@ -1102,9 +1228,12 @@ export async function getFeeWalletIncome(
   let dataFound = false;
 
   // Parallel fetch: Global Claimed (Blockscout) and Token-Specific Unclaimed (Locker)
-  const [ethResult, wethResult, unclaimedResult] = await Promise.all([
+  const [ethResult, wethResult, ethWithdrawals, wethWithdrawals, tokenWithdrawals, unclaimedResult] = await Promise.all([
     fetchBlockscoutIncomingTxs(walletAddress, chain),
     fetchBlockscoutWethTransfers(walletAddress, chain),
+    fetchBlockscoutOutgoingTxs(walletAddress, chain),
+    chain.wethAddress ? fetchBlockscoutOutgoingToken(walletAddress, chain, chain.wethAddress) : Promise.resolve(null),
+    tokenAddress ? fetchBlockscoutOutgoingToken(walletAddress, chain, tokenAddress) : Promise.resolve(null),
     tokenAddress 
       ? getUnclaimedFees(walletAddress, tokenAddress, chain) 
       : Promise.resolve({ unclaimedEth: "0", unclaimedTokenAmount: "0", tokenSymbol: "" }),
@@ -1112,13 +1241,24 @@ export async function getFeeWalletIncome(
 
   if (ethResult && ethResult.totalWei > 0n) {
     totalWei += ethResult.totalWei;
-    allTxs.push(...ethResult.txs);
+    allTxs.push(...ethResult.txs.map((tx: FeeTransaction) => ({ ...tx, type: "income" as const })));
     dataFound = true;
   }
   if (wethResult && wethResult.totalWei > 0n) {
     totalWei += wethResult.totalWei;
-    allTxs.push(...wethResult.txs);
+    allTxs.push(...wethResult.txs.map((tx: FeeTransaction) => ({ ...tx, type: "income" as const })));
     dataFound = true;
+  }
+
+  // Withdrawals are NOT added to totalWei (they are outgoing)
+  if (ethWithdrawals) {
+    allTxs.push(...ethWithdrawals.txs);
+  }
+  if (wethWithdrawals && 'txs' in wethWithdrawals) {
+    allTxs.push(...wethWithdrawals.txs);
+  }
+  if (tokenWithdrawals && 'txs' in tokenWithdrawals) {
+    allTxs.push(...tokenWithdrawals.txs);
   }
 
   // Strategy 2: Etherscan fallback
@@ -1198,17 +1338,38 @@ async function calculateCombinedIncome(
 
   // For V4 Clanker tokens, use ClaimedRewards events for per-token claimed fees
   if (isV4 && tokenAddress) {
-    const [claimedResult, ...unclaimedResults] = await Promise.all([
+    const [claimedResult, ...rest] = await Promise.all([
       fetchClaimedRewardsForToken(tokenAddress, chain),
       ...feeWallets.map(w => getUnclaimedFees(w.address, tokenAddress, chain)),
+      ...feeWallets.map(w => fetchBlockscoutOutgoingTxs(w.address, chain)),
+      ...feeWallets.map(w => chain.wethAddress ? fetchBlockscoutOutgoingToken(w.address, chain, chain.wethAddress) : Promise.resolve(null)),
+      ...feeWallets.map(w => fetchBlockscoutOutgoingToken(w.address, chain, tokenAddress))
     ]);
+
+    // Claims are income
+    const allTxs: FeeTransaction[] = claimedResult.txs.map((tx: FeeTransaction) => ({ ...tx, type: "income" as const }));
+    
+    // Split the rest into batches
+    const unclaimedResults = rest.slice(0, feeWallets.length);
+    const ethWithdrawals = rest.slice(feeWallets.length, feeWallets.length * 2);
+    const wethWithdrawals = rest.slice(feeWallets.length * 2, feeWallets.length * 3);
+    const tokenWithdrawals = rest.slice(feeWallets.length * 3);
 
     let totalUnclaimedWei = 0n;
     for (const unclaimed of unclaimedResults) {
-      if (unclaimed.unclaimedEth && parseFloat(unclaimed.unclaimedEth) > 0) {
+      if (unclaimed && typeof unclaimed === "object" && 'unclaimedEth' in unclaimed && unclaimed.unclaimedEth) {
         totalUnclaimedWei += ethers.parseEther(unclaimed.unclaimedEth);
       }
     }
+
+    // Add withdrawals to the transaction list
+    for (const res of [...ethWithdrawals, ...wethWithdrawals, ...tokenWithdrawals]) {
+      if (res && 'txs' in res) {
+        allTxs.push(...res.txs);
+      }
+    }
+
+    allTxs.sort((a, b) => b.timestamp - a.timestamp);
 
     const claimedEthValue = parseFloat(claimedResult.totalClaimedWeth);
     const unclaimedEthValue = parseFloat(ethers.formatEther(totalUnclaimedWei));
@@ -1218,10 +1379,10 @@ async function calculateCombinedIncome(
       totalUsd: ethPrice ? (claimedEthValue * ethPrice).toFixed(2) : null,
       unclaimedEth: ethers.formatEther(totalUnclaimedWei),
       unclaimedUsd: ethPrice ? (unclaimedEthValue * ethPrice).toFixed(2) : null,
-      unclaimedTokenAmount: unclaimedResults[0]?.unclaimedTokenAmount,
-      tokenSymbol: unclaimedResults[0]?.tokenSymbol,
-      txCount: claimedResult.txs.length,
-      recentTxs: claimedResult.txs.slice(0, 500),
+      unclaimedTokenAmount: unclaimedResults[0] && 'unclaimedTokenAmount' in unclaimedResults[0] ? unclaimedResults[0].unclaimedTokenAmount : undefined,
+      tokenSymbol: unclaimedResults[0] && 'tokenSymbol' in unclaimedResults[0] ? unclaimedResults[0].tokenSymbol : undefined,
+      txCount: allTxs.length,
+      recentTxs: allTxs.slice(0, 500),
     };
   }
 

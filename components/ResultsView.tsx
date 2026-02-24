@@ -108,14 +108,18 @@ function TaxBadge({ label, value }: { label: string; value: number }) {
 
 export default function ResultsView({ result, onBack }: ResultsViewProps) {
     const [currentPage, setCurrentPage] = useState(1);
-    const [txView, setTxView] = useState<"creator" | "token">("creator");
+    const [txView, setTxView] = useState<"creator" | "token" | "withdrawals">("creator");
     const activeIncome = result.feeIncome;
     const ITEMS_PER_PAGE = 10;
 
     const chain = CHAINS.find((c) => c.id === result.chain);
     const explorerUrl = chain?.explorerUrl || "https://basescan.org";
 
-    const allTxs = txView === "creator" ? result.feeIncome.recentTxs : result.tokenTrades;
+    const allTxs = txView === "creator"
+        ? (result.feeIncome?.recentTxs?.filter(t => t.type !== "withdrawal") || [])
+        : txView === "withdrawals"
+            ? (result.feeIncome?.recentTxs?.filter(t => t.type === "withdrawal") || [])
+            : (result.tokenTrades || []);
 
     const totalPages = Math.ceil(allTxs.length / ITEMS_PER_PAGE);
     const paginatedTxs = allTxs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -395,7 +399,16 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                             : "text-text-muted hover:text-text-primary"
                                             }`}
                                     >
-                                        ${result.token.symbol} Trades
+                                        Trades
+                                    </button>
+                                    <button
+                                        onClick={() => { setTxView("withdrawals"); setCurrentPage(1); }}
+                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "withdrawals"
+                                            ? "bg-accent-primary text-bg-primary shadow-sm"
+                                            : "text-text-muted hover:text-text-primary"
+                                            }`}
+                                    >
+                                        Withdrawals
                                     </button>
                                 </div>
                             </div>
@@ -406,10 +419,10 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                         <tr style={{ color: "var(--text-muted)" }}>
                                             <th className="text-left py-2 pr-4 font-medium text-xs">Tx Hash</th>
                                             <th className="text-left py-2 pr-4 font-medium text-xs">
-                                                {txView === "creator" ? "From (Payer)" : "From"}
+                                                {txView === "creator" ? "From (Payer)" : txView === "withdrawals" ? "To (Recipient)" : "From"}
                                             </th>
                                             <th className="text-right py-2 pr-4 font-medium text-xs">
-                                                {txView === "creator" ? "Amount (WETH)" : "Amount"}
+                                                {txView === "creator" || txView === "withdrawals" ? (chain?.nativeSymbol || "WETH") : result.token.symbol}
                                             </th>
                                             <th className="text-right py-2 font-medium text-xs">Time</th>
                                         </tr>
@@ -435,13 +448,13 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                                     className="py-2.5 pr-4 font-mono"
                                                     style={{ color: "var(--text-secondary)" }}
                                                 >
-                                                    {truncateAddress(tx.from)}
+                                                    {truncateAddress(txView === "withdrawals" ? (tx.to || "") : tx.from)}
                                                 </td>
                                                 <td
                                                     className="py-2.5 pr-4 text-right font-mono font-medium"
                                                     style={{ color: "var(--text-primary)" }}
                                                 >
-                                                    {formatNumber(tx.value)} {txView === "creator" ? (chain?.nativeSymbol || "WETH") : result.token.symbol}
+                                                    {formatNumber(tx.value)}
                                                 </td>
                                                 <td
                                                     className="py-2.5 text-right"

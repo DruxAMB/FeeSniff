@@ -46,9 +46,6 @@ export default function SearchBar({ onSubmit, isLoading }: SearchBarProps) {
                 className="flex items-center gap-2 p-2 rounded-2xl transition-all duration-300"
                 style={{
                     background: "var(--bg-surface)",
-                    border: error
-                        ? "1px solid var(--status-red)"
-                        : "1px solid var(--border-subtle)",
                 }}
             >
                 {/* Chain selector */}
@@ -72,7 +69,6 @@ export default function SearchBar({ onSubmit, isLoading }: SearchBarProps) {
                             className="absolute top-full left-0 mt-2 w-48 rounded-xl p-1.5 z-50 shadow-xl"
                             style={{
                                 background: "var(--bg-surface)",
-                                border: "1px solid var(--glass-border)",
                             }}
                         >
                             {CHAINS.map((chain) => (

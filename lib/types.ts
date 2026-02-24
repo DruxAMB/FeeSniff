@@ -30,6 +30,8 @@ export type FeeTransaction = {
   value: string;
   timestamp: number;
   from: string;
+  to?: string;
+  type?: "income" | "withdrawal" | "trade";
 };
 
 export type FeeIncome = {
