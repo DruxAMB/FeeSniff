@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const CA = "0xF35452565ABe5c1A81C8faA35169a754732b5B07";
+const CA = "0x1e59A76e58E07e988d97aa7d89Eb15dc4BF18b07";
 const CHAIN_ID = "base";
 
 export async function GET() {

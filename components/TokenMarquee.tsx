@@ -77,7 +77,6 @@ export default function TokenMarquee() {
         <div
             className="fixed top-0 left-0 right-0 z-100 h-9 flex flex-col overflow-hidden border-b border-(--border-subtle) backdrop-blur-md"
         >
-            {/* Top Row: Token Stats - Commented out for now
             <div className="flex-1 flex items-center border-b border-(--border-subtle)/30">
                 <motion.div
                     className="flex"
@@ -93,10 +92,10 @@ export default function TokenMarquee() {
                     ))}
                 </motion.div>
             </div>
-            */}
+           
 
             {/* Bottom Row: Launch News */}
-            <div className="flex-1 flex items-center">
+            {/* <div className="flex-1 flex items-center">
                 <motion.div
                     className="flex"
                     animate={{ x: ["-50%", "0%"] }} // Scroll reverse for visual interest
@@ -110,7 +109,7 @@ export default function TokenMarquee() {
                         <div key={i}>{launchContent}</div>
                     ))}
                 </motion.div>
-            </div>
+            </div> */}
         </div>
     );
 }
