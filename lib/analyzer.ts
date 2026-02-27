@@ -229,6 +229,7 @@ export async function getTokenInfo(
   const rawSupply = results[2].status === "fulfilled" ? results[2].value as bigint : 0n;
 
   return {
+    address,
     name: val(0) || "Unknown",
     symbol: val(1) || "???",
     totalSupply: rawSupply ? ethers.formatUnits(rawSupply, decimals) : "0",
@@ -1113,18 +1114,21 @@ async function fetchClaimedRewardsForToken(
     const uniqueBlocks = [...new Set(txs.map(t => t.timestamp))];
     const blockTimestamps = new Map<number, number>();
     
-    // Resolve up to 20 unique blocks in parallel
-    const blocksToResolve = uniqueBlocks.slice(0, 20);
-    const blockResults = await Promise.allSettled(
-      blocksToResolve.map(async (bn) => {
-        const block = await provider.getBlock(bn);
-        return { blockNumber: bn, timestamp: block?.timestamp || 0 };
-      })
-    );
-    
-    for (const result of blockResults) {
-      if (result.status === "fulfilled") {
-        blockTimestamps.set(result.value.blockNumber, result.value.timestamp);
+    // Resolve all unique blocks in chunks of 20 to avoid rate limits
+    const chunkSize = 20;
+    for (let i = 0; i < uniqueBlocks.length; i += chunkSize) {
+      const chunk = uniqueBlocks.slice(i, i + chunkSize);
+      const blockResults = await Promise.allSettled(
+        chunk.map(async (bn) => {
+          const block = await provider.getBlock(bn);
+          return { blockNumber: bn, timestamp: block?.timestamp || 0 };
+        })
+      );
+      
+      for (const result of blockResults) {
+        if (result.status === "fulfilled") {
+          blockTimestamps.set(result.value.blockNumber, result.value.timestamp);
+        }
       }
     }
 

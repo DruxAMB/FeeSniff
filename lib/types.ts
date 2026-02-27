@@ -46,6 +46,7 @@ export type FeeIncome = {
 };
 
 export type TokenInfo = {
+  address: string;
   name: string;
   symbol: string;
   totalSupply: string;

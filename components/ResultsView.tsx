@@ -13,10 +13,12 @@ import {
     ChevronLeft,
     ChevronRight,
     ArrowRightLeft,
+    PieChart,
 } from "lucide-react";
 import { useState } from "react";
 import type { AnalysisResult } from "@/lib/types";
 import { CHAINS } from "@/lib/chains";
+import BubbleMapModal from "./BubbleMapModal";
 
 type ResultsViewProps = {
     result: AnalysisResult;
@@ -52,7 +54,15 @@ function formatNumber(val: string | number): React.ReactNode {
 }
 
 function timeAgo(timestamp: number): string {
+    if (!timestamp || timestamp === 0) return "Unknown";
+
     const diff = Math.floor(Date.now() / 1000 - timestamp);
+
+    if (diff < 0) return "Just now";
+
+    // If difference is greater than 10 years, it's likely an unresolved block number or invalid timestamp
+    if (diff > 315360000) return "Unknown";
+
     if (diff < 60) return `${diff}s ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -109,6 +119,7 @@ function TaxBadge({ label, value }: { label: string; value: number }) {
 export default function ResultsView({ result, onBack }: ResultsViewProps) {
     const [currentPage, setCurrentPage] = useState(1);
     const [txView, setTxView] = useState<"creator" | "token" | "withdrawals">("creator");
+    const [isBubbleMapOpen, setIsBubbleMapOpen] = useState(false);
     const activeIncome = result.feeIncome;
     const ITEMS_PER_PAGE = 10;
 
@@ -125,6 +136,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
     const paginatedTxs = allTxs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
     return (
+        <>
         <div className="w-full space-y-4 pt-4">
             {/* ── Token header ────────────────────────── */}
             <div className="glass-card p-6">
@@ -170,7 +182,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </div>
                     </div>
 
-                    <div className="text-right flex md:flex-col items-end gap-2">
+                    <div className="text-right  items-end gap-2">
                         <div className="flex items-center gap-2">
                             <a
                                 href={`https://app.uniswap.org/swap?outputCurrency=${result.contractAddress}&chain=${result.chain}`}
@@ -185,6 +197,19 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                 <ArrowRightLeft className="h-3.5 w-3.5" />
                                 Trade
                             </a>
+                            {["base", "ethereum", "bsc", "arbitrum", "polygon", "avalanche"].includes(chain?.id || "") && (
+                                <button
+                                    onClick={() => setIsBubbleMapOpen(true)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 border border-[#8b5cf633] hover:border-[#8b5cf666]"
+                                    style={{
+                                        background: "rgba(139, 92, 246, 0.08)",
+                                        color: "#a78bfa",
+                                    }}
+                                >
+                                    <PieChart className="h-3.5 w-3.5" />
+                                    Map
+                                </button>
+                            )}
                             <span
                                 className="px-2.5 py-1 rounded-lg text-xs font-bold border border-(--border-subtle)"
                                 style={{
@@ -197,7 +222,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </div>
                         {result.platform && result.platform !== "generic" && (
                             <span
-                                className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5"
+                                className="px-2.5 py-1 w-fit rounded-lg text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5"
                                 style={{
                                     borderColor: result.platform === "bankr" ? "#3b82f633" : "#22c55e33",
                                     background: result.platform === "bankr" ? "#3b82f611" : "#22c55e11",
@@ -268,14 +293,14 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                             </p>
 
                             {/* Claimed/Unclaimed Breakdown */}
-                            {activeIncome.unclaimedEth && parseFloat(activeIncome.unclaimedEth) > 0 && (
+                            {(parseFloat(activeIncome.totalEth || "0") > 0 || parseFloat(activeIncome.unclaimedEth || "0") > 0 || parseFloat(activeIncome.unclaimedTokenAmount || "0") > 0) && (
                                 <div className="mt-6 pt-6 border-t border-(--border-subtle) grid grid-cols-2 gap-4">
                                     <div className="text-left">
                                         <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
                                             Claimed
                                         </p>
                                         <p className="text-lg font-bold" style={{ color: "var(--text-secondary)" }}>
-                                            {formatNumber(activeIncome.totalEth)} {chain?.nativeSymbol}
+                                            {formatNumber(activeIncome.totalEth || "0")} {chain?.nativeSymbol}
                                         </p>
                                     </div>
                                     <div className="text-right">
@@ -283,11 +308,11 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                             UNCLAIMED
                                         </p>
                                         <p className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-                                            {formatNumber(activeIncome.unclaimedEth)} {chain?.nativeSymbol}
+                                            {formatNumber(activeIncome.unclaimedEth || "0")} {chain?.nativeSymbol}
                                         </p>
                                         {activeIncome.unclaimedTokenAmount && parseFloat(activeIncome.unclaimedTokenAmount) > 0 && (
                                             <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
-                                                + {formatNumber(activeIncome.unclaimedTokenAmount)} ${activeIncome.tokenSymbol || "TOKENS"}
+                                                + {formatNumber(activeIncome.unclaimedTokenAmount || "0")} ${activeIncome.tokenSymbol || "TOKENS"}
                                             </p>
                                         )}
                                     </div>
@@ -297,13 +322,6 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </div>
                     </div>
 
-                    {/* ── Tax Rates ──────────────────────────── */}
-                    {result.taxRates && (result.taxRates.buyTax > 0 || result.taxRates.sellTax > 0) ? (
-                        <div className="grid grid-cols-2 gap-4">
-                            <TaxBadge label="Buy Tax" value={result.taxRates.buyTax} />
-                            <TaxBadge label="Sell Tax" value={result.taxRates.sellTax} />
-                        </div>
-                    ) : null}
 
                     {/* ── Fee Wallets ────────────────────────── */}
                     {result.feeWallets.length > 0 ? (
@@ -367,147 +385,169 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                     )}
 
                     {/* ── Recent Transactions ────────────────── */}
-                    {allTxs.length > 0 && (
-                        <div className="glass-card p-6">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                                <h3
-                                    className="text-sm font-semibold flex items-center gap-2"
-                                    style={{ color: "var(--text-secondary)" }}
+                    <div className="glass-card p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                            <h3
+                                className="text-sm font-semibold flex items-center gap-2"
+                                style={{ color: "var(--text-secondary)" }}
+                            >
+                                <Clock className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                                Transaction History
+                            </h3>
+
+                            {/* Tab Switcher */}
+                            <div
+                                className="flex p-1 rounded-xl w-fit border border-(--border-subtle)"
+                                style={{ background: "var(--bg-secondary)" }}
+                            >
+                                <button
+                                    onClick={() => { setTxView("creator"); setCurrentPage(1); }}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "creator"
+                                        ? "bg-accent-primary text-bg-primary shadow-sm"
+                                        : "text-text-muted hover:text-text-primary"
+                                        }`}
                                 >
-                                    <Clock className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
-                                    Transaction History
-                                </h3>
-
-                                {/* Tab Switcher */}
-                                <div
-                                    className="flex p-1 rounded-xl w-fit border border-(--border-subtle)"
-                                    style={{ background: "var(--bg-secondary)" }}
+                                    Creator Revenue
+                                </button>
+                                <button
+                                    onClick={() => { setTxView("token"); setCurrentPage(1); }}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "token"
+                                        ? "bg-accent-primary text-bg-primary shadow-sm"
+                                        : "text-text-muted hover:text-text-primary"
+                                        }`}
                                 >
-                                    <button
-                                        onClick={() => { setTxView("creator"); setCurrentPage(1); }}
-                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "creator"
-                                            ? "bg-accent-primary text-bg-primary shadow-sm"
-                                            : "text-text-muted hover:text-text-primary"
-                                            }`}
-                                    >
-                                        Creator Revenue
-                                    </button>
-                                    <button
-                                        onClick={() => { setTxView("token"); setCurrentPage(1); }}
-                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "token"
-                                            ? "bg-accent-primary text-bg-primary shadow-sm"
-                                            : "text-text-muted hover:text-text-primary"
-                                            }`}
-                                    >
-                                        Trades
-                                    </button>
-                                    <button
-                                        onClick={() => { setTxView("withdrawals"); setCurrentPage(1); }}
-                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "withdrawals"
-                                            ? "bg-accent-primary text-bg-primary shadow-sm"
-                                            : "text-text-muted hover:text-text-primary"
-                                            }`}
-                                    >
-                                        Withdrawals
-                                    </button>
-                                </div>
+                                    Trades
+                                </button>
+                                <button
+                                    onClick={() => { setTxView("withdrawals"); setCurrentPage(1); }}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${txView === "withdrawals"
+                                        ? "bg-accent-primary text-bg-primary shadow-sm"
+                                        : "text-text-muted hover:text-text-primary"
+                                        }`}
+                                >
+                                    Withdrawals
+                                </button>
                             </div>
-
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr style={{ color: "var(--text-muted)" }}>
-                                            <th className="text-left py-2 pr-4 font-medium text-xs">Tx Hash</th>
-                                            <th className="text-left py-2 pr-4 font-medium text-xs">
-                                                {txView === "creator" ? "From (Payer)" : txView === "withdrawals" ? "To (Recipient)" : "From"}
-                                            </th>
-                                            <th className="text-right py-2 pr-4 font-medium text-xs">
-                                                {txView === "creator" || txView === "withdrawals" ? (chain?.nativeSymbol || "WETH") : result.token.symbol}
-                                            </th>
-                                            <th className="text-right py-2 font-medium text-xs">Time</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {paginatedTxs.map((tx, i) => (
-                                            <tr
-                                                key={i}
-                                                className="border-t border-(--border-subtle) hover:bg-bg-secondary transition-colors"
-                                            >
-                                                <td className="py-2.5 pr-4">
-                                                    <a
-                                                        href={`${explorerUrl}/tx/${tx.hash}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="font-mono transition-colors underline"
-                                                        style={{ color: "var(--accent-primary)" }}
-                                                    >
-                                                        {truncateAddress(tx.hash)}
-                                                    </a>
-                                                </td>
-                                                <td
-                                                    className="py-2.5 pr-4 font-mono"
-                                                    style={{ color: "var(--text-secondary)" }}
-                                                >
-                                                    {truncateAddress(txView === "withdrawals" ? (tx.to || "") : tx.from)}
-                                                </td>
-                                                <td
-                                                    className="py-2.5 pr-4 text-right font-mono font-medium"
-                                                    style={{ color: "var(--text-primary)" }}
-                                                >
-                                                    {formatNumber(tx.value)}
-                                                </td>
-                                                <td
-                                                    className="py-2.5 text-right"
-                                                    style={{ color: "var(--text-muted)" }}
-                                                >
-                                                    {timeAgo(tx.timestamp)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* Pagination Controls */}
-                            {totalPages > 1 && (
-                                <div className="flex items-center justify-between mt-6 pt-4 border-t border-(--border-subtle)">
-                                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                        Showing <span className="text-text-primary font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="text-text-primary font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, allTxs.length)}</span> of <span className="text-text-primary font-medium">{allTxs.length}</span> transactions
-                                    </p>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                            disabled={currentPage === 1}
-                                            className="p-1.5 rounded-lg border border-(--border-subtle) transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bg-secondary"
-                                            aria-label="Previous page"
-                                        >
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </button>
-                                        <div className="flex items-center gap-1">
-                                            <span
-                                                className="w-10 h-8 flex items-center justify-center rounded-lg text-xs font-bold border border-accent-primary bg-accent-primary text-bg-primary shadow-sm"
-                                            >
-                                                {currentPage}
-                                            </span>
-                                            <span className="text-xs font-medium px-2" style={{ color: "var(--text-muted)" }}>
-                                                of {totalPages}
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                            disabled={currentPage === totalPages}
-                                            className="p-1.5 rounded-lg border border-(--border-subtle) transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bg-secondary"
-                                            aria-label="Next page"
-                                        >
-                                            <ChevronRight className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
                         </div>
-                    )}
-                </>
-            )}
-        </div>
-    );
-}
+
+                        {allTxs.length > 0 ? (
+                            <>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr style={{ color: "var(--text-muted)" }}>
+                                                <th className="text-left py-2 pr-4 font-medium text-xs">Tx Hash</th>
+                                                <th className="text-left py-2 pr-4 font-medium text-xs">
+                                                    {txView === "creator" ? "From (Payer)" : txView === "withdrawals" ? "To (Recipient)" : "From"}
+                                                </th>
+                                                <th className="text-right py-2 pr-4 font-medium text-xs">
+                                                    {txView === "creator" || txView === "withdrawals" ? (chain?.nativeSymbol || "WETH") : result.token.symbol}
+                                                </th>
+                                                <th className="text-right py-2 font-medium text-xs">Time</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {paginatedTxs.map((tx, i) => (
+                                                <tr
+                                                    key={i}
+                                                    className="border-t border-(--border-subtle) hover:bg-bg-secondary transition-colors"
+                                                >
+                                                    <td className="py-2.5 pr-4">
+                                                        <a
+                                                            href={`${explorerUrl}/tx/${tx.hash}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="font-mono transition-colors underline"
+                                                            style={{ color: "var(--accent-primary)" }}
+                                                        >
+                                                            {truncateAddress(tx.hash)}
+                                                        </a>
+                                                    </td>
+                                                    <td
+                                                        className="py-2.5 pr-4 font-mono"
+                                                        style={{ color: "var(--text-secondary)" }}
+                                                    >
+                                                        {truncateAddress(txView === "withdrawals" ? (tx.to || "") : tx.from)}
+                                                    </td>
+                                                    <td
+                                                        className="py-2.5 pr-4 text-right font-mono font-medium"
+                                                        style={{ color: "var(--text-primary)" }}
+                                                    >
+                                                        {formatNumber(tx.value)}
+                                                    </td>
+                                                    <td
+                                                        className="py-2.5 text-right"
+                                                        style={{ color: "var(--text-muted)" }}
+                                                    >
+                                                        {timeAgo(tx.timestamp)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Pagination Controls */}
+                                {totalPages > 1 && (
+                                    <div className="flex items-center justify-between mt-6 pt-4 border-t border-(--border-subtle)">
+                                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                            Showing <span className="text-text-primary font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="text-text-primary font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, allTxs.length)}</span> of <span className="text-text-primary font-medium">{allTxs.length}</span> transactions
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                disabled={currentPage === 1}
+                                                className="p-1.5 rounded-lg border border-(--border-subtle) transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bg-secondary"
+                                                aria-label="Previous page"
+                                            >
+                                                <ChevronLeft className="h-4 w-4" />
+                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <span
+                                                    className="w-10 h-8 flex items-center justify-center rounded-lg text-xs font-bold border border-accent-primary bg-accent-primary text-bg-primary shadow-sm"
+                                                >
+                                                    {currentPage}
+                                                </span>
+                                                <span className="text-xs font-medium px-2" style={{ color: "var(--text-muted)" }}>
+                                                    of {totalPages}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                disabled={currentPage === totalPages}
+                                                className="p-1.5 rounded-lg border border-(--border-subtle) transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bg-secondary"
+                                                aria-label="Next page"
+                                            >
+                                                <ChevronRight className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div
+                                className="p-8 text-center text-sm"
+                                style={{ color: "var(--text-muted)" }}
+                            >
+                                {txView === "creator"
+                                    ? "No recent fee income transactions found."
+                                    : txView === "withdrawals"
+                                        ? "No recent withdrawals found."
+                                        : "No recent trades found."}
+                            </div>
+                        )}
+                    </div>
+                    </>
+            )
+            }
+                </div>
+
+<BubbleMapModal
+    isOpen={isBubbleMapOpen}
+    onClose={() => setIsBubbleMapOpen(false)}
+    chain={chain}
+    tokenAddress={result.token.address}
+    tokenName={result.token.name}
+/>
+</>
+)}
