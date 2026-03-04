@@ -47,14 +47,20 @@ export default function PageLoader() {
                     }}
                     className="relative z-10"
                 >
-                    <div className="p-4 rounded-3xl bg-secondary shadow-2xl border border-(--border-subtle)">
+                    <div
+                        className="relative w-40 h-40 mb-8 rounded-full border border-dashed p-2 flex items-center justify-center"
+                        style={{ borderColor: "var(--border-subtle)" }}
+                    >
+                        <div
+                            className="absolute inset-0 rounded-full border m-4"
+                            style={{ borderColor: "var(--border-strong)", opacity: 0.2 }}
+                        ></div>
                         <Image
                             src="/nosey.png"
-                            alt="Loading..."
-                            width={80}
-                            height={80}
-                            className="rounded-2xl"
-                            priority
+                            width={120}
+                            height={120}
+                            alt="Nosey Token"
+                            className="rounded-full relative z-10"
                         />
                     </div>
                 </motion.div>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import ClaimWrapper from "@/components/ClaimWrapper";
 import Image from "next/image";
 import TokenMarquee from "@/components/TokenMarquee";
 import "./globals.css";
@@ -64,6 +65,7 @@ export default function RootLayout({
                 <span className="gradient-text">tokenSniff</span>
               </a>
               <div className="flex items-center gap-4">
+                <ClaimWrapper />
                 <a
                   href="https://t.me/tokensniff"
                   target="_blank"
