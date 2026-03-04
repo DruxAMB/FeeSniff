@@ -180,7 +180,7 @@ export default function ClaimModal({
     };
 
     const shareToX = () => {
-        const text = encodeURIComponent(`I just claimed my daily $SNIFF tokens!👃🏽\n\nSee how much token creators earn at tokensniff.druxamb.dev`);
+        const text = encodeURIComponent(`I just claimed my free daily @tokensniff tokens!👃🏽\n\nSee how much token creators earn at tokensniff.druxamb.dev`);
         window.open(`https://x.com/intent/tweet?text=${text}`, "_blank");
     };
 

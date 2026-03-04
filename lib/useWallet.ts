@@ -1,164 +1,104 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useAccount, useConnect, useDisconnect, useChainId, useSwitchChain, useConfig } from "wagmi";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { base } from "wagmi/chains";
+import { getConnectorClient } from "@wagmi/core";
+import { BrowserProvider, JsonRpcSigner } from "ethers";
+import type { Account, Chain, Client, Transport } from "viem";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 
 const BASE_CHAIN_ID = 8453;
-const BASE_CHAIN_HEX = "0x2105";
 
-type WalletState = {
-  address: string | null;
-  isConnected: boolean;
-  chainId: number | null;
-  isOnBase: boolean;
-  provider: ethers.BrowserProvider | null;
-  signer: ethers.JsonRpcSigner | null;
-};
+// ─── Ethers Helpers ──────────────────────────────────────────
 
-const initialState: WalletState = {
-  address: null,
-  isConnected: false,
-  chainId: null,
-  isOnBase: false,
-  provider: null,
-  signer: null,
-};
+export function clientToSigner(client: Client<Transport, Chain, Account>) {
+  const { account, chain, transport } = client;
+  const network = {
+    chainId: chain.id,
+    name: chain.name,
+    ensAddress: chain.contracts?.ensRegistry?.address,
+  };
+  const provider = new BrowserProvider(transport, network);
+  const signer = new JsonRpcSigner(provider, account.address);
+  return signer;
+}
+
+/** Hook to get an ethers Signer */
+export function useEthersSigner({ chainId }: { chainId?: number } = {}) {
+  const { data: client } = { data: null } as any; // Placeholder for actual client fetching logic if needed
+  // In wagmi v2, we usually get the client asynchronously
+  return useMemo(() => (client ? clientToSigner(client) : undefined), [client]);
+}
+
+// ─── Main Hook ───────────────────────────────────────────────
 
 export function useWallet() {
-  const [wallet, setWallet] = useState<WalletState>(initialState);
+  const { address, isConnected, status } = useAccount();
+  const { disconnect } = useDisconnect();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const config = useConfig();
+  const { openConnectModal } = useConnectModal();
+
+  const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
+  const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const hasEthereum = typeof window !== "undefined" && !!window.ethereum;
-
-  const updateWalletState = useCallback(async () => {
-    if (!hasEthereum) return;
-
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.listAccounts();
-
-      if (accounts.length === 0) {
-        setWallet(initialState);
-        return;
-      }
-
-      const signer = accounts[0];
-      const network = await provider.getNetwork();
-      const chainId = Number(network.chainId);
-
-      setWallet({
-        address: signer.address,
-        isConnected: true,
-        chainId,
-        isOnBase: chainId === BASE_CHAIN_ID,
-        provider,
-        signer,
-      });
-    } catch {
-      setWallet(initialState);
-    }
-  }, [hasEthereum]);
-
-  // Auto-reconnect on mount
+  // Sync isConnecting with wagmi status
   useEffect(() => {
-    updateWalletState();
-  }, [updateWalletState]);
+    setIsConnecting(status === "connecting" || status === "reconnecting");
+  }, [status]);
 
-  // Listen for account/chain changes
+  // Async get ethers signer/provider
   useEffect(() => {
-    if (!hasEthereum) return;
-
-    const handleAccountsChanged = () => {
-      updateWalletState();
-    };
-
-    const handleChainChanged = () => {
-      updateWalletState();
-    };
-
-    window.ethereum.on("accountsChanged", handleAccountsChanged);
-    window.ethereum.on("chainChanged", handleChainChanged);
-
-    return () => {
-      window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
-      window.ethereum.removeListener("chainChanged", handleChainChanged);
-    };
-  }, [hasEthereum, updateWalletState]);
-
-  const connect = useCallback(async () => {
-    if (!hasEthereum) {
-      setError("No wallet detected. Please install MetaMask or Coinbase Wallet.");
-      return;
-    }
-
-    setIsConnecting(true);
-    setError(null);
-
-    try {
-      await window.ethereum.request({ method: "eth_requestAccounts" });
-      await updateWalletState();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to connect wallet";
-      if (message.includes("rejected")) {
-        setError("Connection rejected by user");
-      } else {
-        setError(message);
-      }
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [hasEthereum, updateWalletState]);
-
-  const disconnect = useCallback(() => {
-    setWallet(initialState);
-    setError(null);
-  }, []);
-
-  const switchToBase = useCallback(async () => {
-    if (!hasEthereum) return;
-
-    try {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: BASE_CHAIN_HEX }],
-      });
-    } catch (err: unknown) {
-      // Chain not added — try adding it
-      const switchErr = err as { code?: number };
-      if (switchErr.code === 4902) {
+    const updateSigner = async () => {
+      if (isConnected && address) {
         try {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
-                chainId: BASE_CHAIN_HEX,
-                chainName: "Base",
-                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                rpcUrls: ["https://mainnet.base.org"],
-                blockExplorerUrls: ["https://basescan.org"],
-              },
-            ],
-          });
-        } catch (addErr) {
-          console.error("Failed to add Base network:", addErr);
-          setError("Failed to add Base network. Please add it manually.");
+          const client = await getConnectorClient(config);
+          const ethersSigner = clientToSigner(client as any);
+          setSigner(ethersSigner);
+          setProvider(ethersSigner.provider as BrowserProvider);
+        } catch (err) {
+          console.error("Failed to get ethers signer:", err);
+          setSigner(null);
+          setProvider(null);
         }
       } else {
-        console.error("Failed to switch network:", err);
-        setError("Failed to switch network in your wallet.");
+        setSigner(null);
+        setProvider(null);
       }
+    };
+    updateSigner();
+  }, [isConnected, address, chainId, config]);
+
+  const connectWallet = useCallback(() => {
+    if (openConnectModal) {
+      openConnectModal();
     }
-  }, [hasEthereum]);
+  }, [openConnectModal]);
+
+  const switchToBase = useCallback(() => {
+    if (switchChain) {
+      switchChain({ chainId: base.id });
+    }
+  }, [switchChain]);
 
   return {
-    ...wallet,
+    address: address || null,
+    isConnected,
+    chainId,
+    isOnBase: chainId === BASE_CHAIN_ID,
+    provider,
+    signer,
     isConnecting,
-    error,
-    hasEthereum,
-    connect,
+    hasEthereum: typeof window !== "undefined" && !!window.ethereum,
+    connect: connectWallet,
     disconnect,
     switchToBase,
-    clearError: () => setError(null),
+    error: null,
+    clearError: () => {},
   };
 }
+

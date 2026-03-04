@@ -1,7 +1,8 @@
+export {};
 const tokenAddress = "0x23FDa67Ed8442C058766d24AC5228f03F079bBa3";
 const blockscoutApi = "https://base.blockscout.com/api/v2";
 
-async function debug() {
+async function debugAbi() {
   const url = `${blockscoutApi}/smart-contracts/${tokenAddress}`;
   const res = await fetch(url);
   const data = await res.json();
@@ -31,4 +32,4 @@ async function debug() {
   console.log("Detected key functions:", matches);
 }
 
-debug();
+debugAbi();

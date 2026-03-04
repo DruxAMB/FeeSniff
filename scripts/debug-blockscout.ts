@@ -4,7 +4,7 @@ const blockscoutApi = "https://base.blockscout.com/api/v2";
 
 const intermediateAddr = "0xad9793c86283b348d6cc1722f1620d3cbb8acfa1";
 
-async function debug() {
+async function debugBlockscout() {
   const url = `${blockscoutApi}/addresses/${intermediateAddr}`;
   
   console.log(`URL: ${url}`);
@@ -15,4 +15,4 @@ async function debug() {
   console.log("Full Response:", JSON.stringify(data, null, 2));
 }
 
-debug();
+debugBlockscout();
