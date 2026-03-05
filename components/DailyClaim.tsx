@@ -3,13 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Check, Info } from "lucide-react";
+import { X, Check, Info, Shield } from "lucide-react";
 import Image from "next/image";
 import ReactConfetti from "react-confetti";
 import { useWindowSize } from "react-use";
 
 import { useWallet } from "@/lib/useWallet";
-import { getClaimContract, getClaimContractReadOnly, SNIFF_DECIMALS } from "@/lib/claim";
+import { getClaimContract, getClaimContractReadOnly, getSniffTokenContract, SNIFF_DECIMALS } from "@/lib/claim";
 import { ethers } from "ethers";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -20,6 +20,8 @@ type ClaimState = {
     streak: number;
     nextReward: string;
     isPaused: boolean;
+    shields: number;
+    shieldPrice: string;
 };
 
 type TxStatus = "idle" | "pending" | "confirming" | "success" | "error";
@@ -56,7 +58,6 @@ export default function ClaimModal({
         isConnected,
         isOnBase,
         signer,
-        hasEthereum,
         connect,
         isConnecting,
         switchToBase,
@@ -68,6 +69,7 @@ export default function ClaimModal({
     const [loading, setLoading] = useState(true);
     const [mounted, setMounted] = useState(false);
     const [showInfo, setShowInfo] = useState(false);
+    const [isBuyingShield, setIsBuyingShield] = useState(false);
 
     useEffect(() => {
         setMounted(true);
@@ -89,16 +91,20 @@ export default function ClaimModal({
                     streak: 0,
                     nextReward: "100",
                     isPaused,
+                    shields: 0,
+                    shieldPrice: "400",
                 });
                 setLoading(false);
                 return;
             }
 
-            const [canClaim, timeLeft, streak, nextReward] = await Promise.all([
+            const [canClaim, timeLeft, streak, nextReward, shieldCount, price] = await Promise.all([
                 contract.canClaim(address),
                 contract.timeUntilNextClaim(address),
                 contract.currentStreak(address),
                 contract.nextReward(address),
+                contract.shields(address),
+                contract.shieldPrice(),
             ]);
 
             setClaimState({
@@ -107,6 +113,8 @@ export default function ClaimModal({
                 streak: Number(streak),
                 nextReward: formatSniff(nextReward),
                 isPaused,
+                shields: Number(shieldCount),
+                shieldPrice: formatSniff(price),
             });
         } catch (err) {
             console.error("Failed to fetch claim data:", err);
@@ -147,40 +155,67 @@ export default function ClaimModal({
         return () => clearInterval(interval);
     }, [claimState?.canClaim, claimState?.timeLeft]);
 
-    // ─── Claim handler ─────────────────────────────────────
-    const handleClaim = async () => {
-        if (!signer || !isOnBase) return;
+    // ─── Handlers ──────────────────────────────────────────
 
-        setTxStatus("pending");
-        setTxError(null);
+    const handleClaim = async () => {
+        if (!signer || !address) return;
 
         try {
+            setTxStatus("pending");
+            setTxError(null);
+
             const contract = getClaimContract(signer);
             const tx = await contract.claim();
             setTxStatus("confirming");
             await tx.wait();
             setTxStatus("success");
-
-            // Refresh data silently
-            setTimeout(() => fetchClaimData(), 2000);
-        } catch (err: unknown) {
+            fetchClaimData();
+        } catch (err: any) {
+            console.error("Claim failed:", err);
             setTxStatus("error");
-            const message = err instanceof Error ? err.message : "Transaction failed";
+            setTxError(err.reason || err.message || "Transaction failed");
+        }
+    };
 
-            if (message.includes("Already claimed")) {
-                setTxError("Already claimed today!");
-            } else if (message.includes("rejected") || message.includes("denied")) {
-                setTxError("Transaction rejected");
-            } else if (message.includes("insufficient")) {
-                setTxError("Contract out of funds");
-            } else {
-                setTxError("Failed to claim. Try again.");
+    const handleBuyShield = async () => {
+        if (!signer || !address || !claimState) return;
+
+        try {
+            setIsBuyingShield(true);
+            setTxError(null);
+
+            const claimContract = getClaimContract(signer);
+            const tokenContract = getSniffTokenContract(signer);
+
+            const price = ethers.parseUnits("400", SNIFF_DECIMALS); // 400 $SNIFF
+
+            // Check allowance
+            setTxStatus("pending");
+            const allowance = await tokenContract.allowance(address, await claimContract.getAddress());
+
+            if (allowance < price) {
+                const approveTx = await tokenContract.approve(await claimContract.getAddress(), ethers.MaxUint256);
+                await approveTx.wait();
             }
+
+            const tx = await claimContract.buyShield(1);
+            setTxStatus("confirming");
+            await tx.wait();
+
+            setTxStatus("idle");
+            fetchClaimData();
+        } catch (err: any) {
+            console.error("Buy shield failed:", err);
+            setTxError(err.reason || err.message || "Purchase failed");
+            setTxStatus("error");
+        } finally {
+            setIsBuyingShield(false);
+            if (txStatus !== "success" && txStatus !== "error") setTxStatus("idle");
         }
     };
 
     const shareToX = () => {
-        const text = encodeURIComponent(`I just claimed my free daily @tokensniff tokens!👃🏽\n\nSee how much token creators earn at tokensniff.druxamb.dev`);
+        const text = encodeURIComponent(`I just claimed my free daily $SNIFF tokens!👃🏽\n\nSee how much token creators earn @tokensniff tokensniff.druxamb.dev`);
         window.open(`https://x.com/intent/tweet?text=${text}`, "_blank");
     };
 
@@ -217,13 +252,11 @@ export default function ClaimModal({
                     initial={{ opacity: 0, scale: 0.95, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                    className="relative w-full max-w-sm overflow-hidden flex flex-col items-center justify-between p-8"
+                    className="relative w-full max-w-sm overflow-hidden flex flex-col items-center justify-between p-8 border border-b-8"
                     style={{
                         background: "var(--bg-primary)",
                         borderRadius: "32px",
                         boxShadow: "0 24px 50px rgba(0,0,0,0.1)",
-                        border: "1px solid var(--border-subtle)",
-                        minHeight: "480px",
                     }}
                 >
                     {/* Close button */}
@@ -247,11 +280,11 @@ export default function ClaimModal({
                     {/* ────── Info State ────── */}
                     {showInfo ? (
                         <div className="flex flex-col items-center w-full h-full mt-4 flex-1">
-                            <h2 className="text-xl font-bold mb-6 mt-6" style={{ color: "var(--text-primary)" }}>
+                            <h2 className="text-xl font-bold mb-4 mt-6" style={{ color: "var(--text-primary)" }}>
                                 Streak Multipliers
                             </h2>
 
-                            <div className="w-full text-left bg-black/5 dark:bg-white/5 p-4 rounded-2xl border mb-6 space-y-4" style={{ borderColor: "var(--border-subtle)", color: "var(--text-secondary)" }}>
+                            <div className="w-full text-left bg-black/5 dark:bg-white/5 p-4 rounded-2xl border mb-4 space-y-3" style={{ borderColor: "var(--border-subtle)", color: "var(--text-secondary)" }}>
                                 <div className="flex justify-between items-center text-sm">
                                     <span>Days 1-6</span>
                                     <span className="font-medium" style={{ color: "var(--text-primary)" }}>1.0x (100)</span>
@@ -273,26 +306,30 @@ export default function ClaimModal({
                                 </div>
                             </div>
 
-                            <div className="mb-auto">
-                                <p className="text-xs text-center px-2" style={{ color: "var(--text-muted)", lineHeight: "1.5" }}>
-                                    You have a 48 hour grace period.<br />If you don't claim within 48 hours,<br />your streak resets to 1x!
+                            <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/20 mb-auto">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Shield className="w-4 h-4 text-blue-500" />
+                                    <span className="text-xs font-bold text-blue-500 uppercase">Streak Shield</span>
+                                </div>
+                                <p className="text-[10px] text-blue-500/80 leading-relaxed">
+                                    Shield protects your streak for 1 missed day!
                                 </p>
                             </div>
 
                             <button
                                 onClick={() => setShowInfo(false)}
-                                className="w-full max-w-[200px] mt-8 py-3.5 rounded-xl font-semibold transition-opacity hover:opacity-90 cursor-pointer"
+                                className="w-full max-w-[200px] mt-6 py-3.5 rounded-xl font-semibold transition-opacity hover:opacity-90 cursor-pointer"
                                 style={{ background: "var(--text-primary)", color: "var(--bg-primary)" }}
                             >
                                 Got it
                             </button>
                         </div>
                     ) : txStatus === "success" ? (
-                        /* ────── Success State (Matches reference image 1) ────── */
+                        /* ────── Success State ────── */
                         <div className="flex flex-col items-center w-full h-full justify-center mt-12 mb-4 animate-fade-in text-center flex-1">
                             <div
                                 className="w-24 h-24 rounded-full flex items-center justify-center mb-6"
-                                style={{ background: "#22c55e" }} // Bright green like reference
+                                style={{ background: "#22c55e" }}
                             >
                                 <Check className="w-12 h-12 text-white" strokeWidth={3} />
                             </div>
@@ -314,18 +351,18 @@ export default function ClaimModal({
 
                             <button
                                 onClick={shareToX}
-                                className="w-full max-w-[200px] mt-12 py-3.5 rounded-xl font-semibold transition-opacity hover:opacity-90 cursor-pointer"
+                                className="w-full max-w-[200px] mt-10 py-3.5 rounded-xl font-semibold transition-opacity hover:opacity-90 cursor-pointer"
                                 style={{ background: "var(--text-primary)", color: "var(--bg-primary)" }}
                             >
                                 Share
                             </button>
                         </div>
                     ) : (
-                        /* ────── Claim State (Matches reference image 2) ────── */
+                        /* ────── Claim State ────── */
                         <div className="flex flex-col items-center w-full h-full mt-4 text-center flex-1">
                             {/* Token Logo Circle */}
                             <div
-                                className="relative w-40 h-40 mb-8 rounded-full border border-dashed p-2 flex items-center justify-center"
+                                className="relative w-36 h-36 mb-6 rounded-full border border-dashed p-2 flex items-center justify-center"
                                 style={{ borderColor: "var(--border-subtle)" }}
                             >
                                 <div
@@ -334,18 +371,26 @@ export default function ClaimModal({
                                 ></div>
                                 <Image
                                     src="/nosey.png"
-                                    width={120}
-                                    height={120}
+                                    width={100}
+                                    height={100}
                                     alt="Nosey Token"
                                     className="rounded-full relative z-10"
                                 />
+
+                                {/* Shield Badge */}
+                                {isConnected && claimState && (
+                                    <div className="absolute -top-1 -right-1 z-20 flex items-center gap-1.5 bg-blue-500 text-white px-2.5 py-1.5 rounded-full shadow-lg border-2 border-[var(--bg-primary)]">
+                                        <Shield className="w-3.5 h-3.5 fill-white" />
+                                        <span className="text-[10px] font-bold">{claimState.shields}</span>
+                                    </div>
+                                )}
                             </div>
 
-                            <h2 className="text-2xl font-bold mb-6 flex gap-2 items-center justify-center" style={{ color: "var(--text-primary)" }}>
+                            <h2 className="text-2xl font-bold mb-4 flex gap-1 items-center justify-center" style={{ color: "var(--text-primary)" }}>
                                 Claim {claimState?.nextReward || "..."} <span className="text-lg" style={{ color: "var(--text-muted)" }}>$SNIFF</span>
                             </h2>
 
-                            <div className="mb-auto">
+                            <div className="mb-4">
                                 <p className="text-xs px-4" style={{ color: "var(--text-muted)" }}>
                                     Build your daily streak to earn up to 3x rewards!
                                     {claimState && claimState.streak > 0 && (
@@ -356,8 +401,42 @@ export default function ClaimModal({
                                 </p>
                             </div>
 
+                            {/* Streak Shield Purchase Section */}
+                            {isConnected && claimState && (
+                                <div className="w-full mb-6 px-4">
+                                    <button
+                                        onClick={handleBuyShield}
+                                        disabled={isBuyingShield || txStatus === "pending" || txStatus === "confirming"}
+                                        className="w-full group relative flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-[var(--border-subtle)] hover:bg-black/10 dark:hover:bg-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+                                                <Shield className="w-4 h-4" />
+                                            </div>
+                                            <div className="text-left">
+                                                <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Streak Shield</p>
+                                                <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Protect for 1 missed day</p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-blue-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl">
+                                            {isBuyingShield ? "BUYING..." : `${claimState.shieldPrice} $SNIFF`}
+                                        </div>
+
+                                        {/* Progress Bar for purchase */}
+                                        {isBuyingShield && (
+                                            <motion.div
+                                                className="absolute bottom-0 left-0 h-0.5 bg-blue-500"
+                                                initial={{ width: 0 }}
+                                                animate={{ width: "100%" }}
+                                                transition={{ duration: 20 }}
+                                            />
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Action Button */}
-                            <div className="w-full mt-8">
+                            <div className="w-full mt-5">
                                 {loading ? (
                                     <div className="h-12 flex items-center justify-center">
                                         <div className="w-5 h-5 border-2 border-gray-300 border-t-black rounded-full animate-spin"></div>
@@ -385,11 +464,11 @@ export default function ClaimModal({
                                 ) : claimState?.canClaim ? (
                                     <div className="flex flex-col items-center">
                                         {txError && (
-                                            <p className="text-red-500 text-xs mb-3">{txError}</p>
+                                            <p className="text-red-500 text-[10px] mb-3">{txError}</p>
                                         )}
                                         <button
                                             onClick={handleClaim}
-                                            disabled={txStatus === "pending" || txStatus === "confirming"}
+                                            disabled={txStatus === "pending" || txStatus === "confirming" || isBuyingShield}
                                             className="w-full max-w-[200px] mx-auto py-3.5 rounded-xl font-semibold block transition-opacity hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
                                             style={{ background: "var(--text-primary)", color: "var(--bg-primary)" }}
                                         >
@@ -398,6 +477,9 @@ export default function ClaimModal({
                                     </div>
                                 ) : (
                                     <div className="flex flex-col items-center">
+                                        {txError && (
+                                            <p className="text-red-500 text-[10px] mb-3">{txError}</p>
+                                        )}
                                         <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>Available in</p>
                                         <button disabled className="w-full max-w-[200px] mx-auto py-3.5 rounded-xl font-semibold font-mono block opacity-80 cursor-not-allowed" style={{ background: "var(--bg-skeleton)", color: "var(--text-primary)" }}>
                                             {formatCountdown(claimState?.timeLeft || 0)}
@@ -408,8 +490,8 @@ export default function ClaimModal({
                         </div>
                     )}
                 </motion.div>
-            </div >
-        </AnimatePresence >,
+            </div>
+        </AnimatePresence>,
         document.body
     );
 }

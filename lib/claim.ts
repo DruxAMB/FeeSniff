@@ -25,12 +25,23 @@ export const CLAIM_CONTRACT_ABI = [
   "function getMultiplier(uint256 currentStreak) pure returns (uint256)",
   "function getRewardForStreak(uint256 currentStreak) view returns (uint256)",
   "function paused() view returns (bool)",
+  "function shields(address user) view returns (uint256)",
+  "function shieldPrice() view returns (uint256)",
 
   // Write functions
   "function claim() external",
+  "function buyShield(uint256 amount) external",
 
   // Events
   "event Claimed(address indexed user, uint256 amount, uint256 streak, uint256 multiplier)",
+  "event ShieldBought(address indexed user, uint256 amount, uint256 cost)",
+  "event ShieldUsed(address indexed user, uint256 newStreak)",
+];
+
+export const SNIFF_TOKEN_ABI = [
+  "function approve(address spender, uint256 amount) external returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address account) view returns (uint256)",
 ];
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -50,4 +61,11 @@ export function getClaimContractReadOnly() {
  */
 export function getClaimContract(signer: ethers.JsonRpcSigner) {
   return new ethers.Contract(CLAIM_CONTRACT_ADDRESS, CLAIM_CONTRACT_ABI, signer);
+}
+
+/**
+ * Get target token contract
+ */
+export function getSniffTokenContract(signer: ethers.JsonRpcSigner) {
+  return new ethers.Contract(SNIFF_TOKEN_ADDRESS, SNIFF_TOKEN_ABI, signer);
 }

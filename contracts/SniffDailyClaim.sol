@@ -42,6 +42,10 @@ contract SniffDailyClaim is
     uint256 public totalClaimers;
     mapping(address => bool) private hasClaimed;
 
+    // --- New State (Added for Shield Feature) ---
+    mapping(address => uint256) public shields;
+    uint256 public shieldPrice;
+
     // ─── Events ─────────────────────────────────────────────
     event Claimed(
         address indexed user,
@@ -51,6 +55,9 @@ contract SniffDailyClaim is
     );
     event DailyRewardUpdated(uint256 oldReward, uint256 newReward);
     event TokensWithdrawn(address indexed to, uint256 amount);
+    event ShieldBought(address indexed user, uint256 amount, uint256 cost);
+    event ShieldUsed(address indexed user, uint256 newStreak);
+    event ShieldPriceUpdated(uint256 oldPrice, uint256 newPrice);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -70,10 +77,30 @@ contract SniffDailyClaim is
         dailyReward = 100 * 1e18; // base reward (100 SNIFF, 18 decimals)
         cooldown = 1 days;        // minimum gap between claims
         streakWindow = 2 days;    // grace window to keep streak alive
+        shieldPrice = 400 * 1e18; // default shield price
     }
 
     // ─── UUPS Upgrade Authorization ─────────────────────────
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    // ─── Shield Logic ───────────────────────────────────────
+
+    /**
+     * @notice Purchase streak shields using $SNIFF tokens.
+     * @param amount The number of shields to buy.
+     */
+    function buyShield(uint256 amount) external nonReentrant whenNotPaused {
+        require(amount > 0, "Amount must be > 0");
+        uint256 totalCost = amount * shieldPrice;
+        
+        require(
+            sniffToken.transferFrom(msg.sender, address(this), totalCost),
+            "Transfer failed"
+        );
+
+        shields[msg.sender] += amount;
+        emit ShieldBought(msg.sender, amount, totalCost);
+    }
 
     // ─── Multiplier Logic ───────────────────────────────────
 
@@ -111,12 +138,19 @@ contract SniffDailyClaim is
         );
 
         // Update streak
-        if (
-            lastClaimed[msg.sender] != 0 &&
-            block.timestamp <= lastClaimed[msg.sender] + streakWindow
-        ) {
+        if (lastClaimed[msg.sender] == 0) {
+            // First time claim
+            streak[msg.sender] = 1;
+        } else if (block.timestamp <= lastClaimed[msg.sender] + streakWindow) {
+            // Within grace window
             streak[msg.sender]++;
+        } else if (shields[msg.sender] > 0) {
+            // Outside window BUT has a shield
+            shields[msg.sender]--;
+            streak[msg.sender]++;
+            emit ShieldUsed(msg.sender, streak[msg.sender]);
         } else {
+            // Reset streak
             streak[msg.sender] = 1;
         }
 
@@ -154,10 +188,11 @@ contract SniffDailyClaim is
     }
 
     function currentStreak(address user) external view returns (uint256) {
-        // If streak window has expired, streak is effectively 0 (will reset on next claim)
+        // If streak window has expired AND user has no shields, streak is effectively 0
         if (
             lastClaimed[user] != 0 &&
-            block.timestamp > lastClaimed[user] + streakWindow
+            block.timestamp > lastClaimed[user] + streakWindow &&
+            shields[user] == 0
         ) {
             return 0;
         }
@@ -167,8 +202,9 @@ contract SniffDailyClaim is
     function nextReward(address user) external view returns (uint256) {
         uint256 projectedStreak;
         if (
-            lastClaimed[user] != 0 &&
-            block.timestamp <= lastClaimed[user] + streakWindow
+            lastClaimed[user] == 0 ||
+            block.timestamp <= lastClaimed[user] + streakWindow ||
+            shields[user] > 0
         ) {
             projectedStreak = streak[user] + 1;
         } else {
@@ -186,6 +222,11 @@ contract SniffDailyClaim is
     function setDailyReward(uint256 _reward) external onlyOwner {
         emit DailyRewardUpdated(dailyReward, _reward);
         dailyReward = _reward;
+    }
+
+    function setShieldPrice(uint256 _price) external onlyOwner {
+        emit ShieldPriceUpdated(shieldPrice, _price);
+        shieldPrice = _price;
     }
 
     function withdrawTokens(uint256 amount) external onlyOwner {

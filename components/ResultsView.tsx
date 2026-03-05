@@ -137,7 +137,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
 
     return (
         <>
-        <div className="w-full space-y-4 pt-4">
+        <div className="w-full space-y- pt-4">
             {/* ── Token header ────────────────────────── */}
             <div className="glass-card p-6">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -182,7 +182,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </div>
                     </div>
 
-                    <div className="text-right  items-end gap-2">
+                    <div className="text-right items-end gap-2">
                         <div className="flex items-center gap-2">
                             <a
                                 href={`https://app.uniswap.org/swap?outputCurrency=${result.contractAddress}&chain=${result.chain}`}
@@ -222,7 +222,7 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                         </div>
                         {result.platform && result.platform !== "generic" && (
                             <span
-                                className="px-2.5 py-1 w-fit rounded-lg text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5"
+                                className="mt-2 px-2.5 py-1 w-fit rounded-lg text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5"
                                 style={{
                                     borderColor: result.platform === "bankr" ? "#3b82f633" : "#22c55e33",
                                     background: result.platform === "bankr" ? "#3b82f611" : "#22c55e11",
@@ -264,8 +264,8 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                     {/* ── Fee Breakdowns ──────────────────────── */}
                     <div className="space-y-4">
                         {/* ── Hero metric: Total Creator Revenue ─────────────── */}
-                        <div className="glass-card p-8 text-center border-2 border-(--border-strong)">
-                            <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
+                        <div className="glass-car p-8 text-center border border-(--border-strong)">
+                            {/* <p className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>
                                 <TrendingUp className="inline h-4 w-4 mr-1" />
                                 Total Fees Withdrawn (All Tokens)
                             </p>
@@ -290,11 +290,11 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                         ? "Current token rewards listed below"
                                         : "No recent transactions found"
                                 )}
-                            </p>
+                            </p> */}
 
                             {/* Claimed/Unclaimed Breakdown */}
                             {(parseFloat(activeIncome.totalEth || "0") > 0 || parseFloat(activeIncome.unclaimedEth || "0") > 0 || parseFloat(activeIncome.unclaimedTokenAmount || "0") > 0) && (
-                                <div className="mt-6 pt-6 border-t border-(--border-subtle) grid grid-cols-2 gap-4">
+                                <div className="pt-6 grid grid-cols-2 gap-4">
                                     <div className="text-left">
                                         <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
                                             Claimed
@@ -318,14 +318,13 @@ export default function ResultsView({ result, onBack }: ResultsViewProps) {
                                     </div>
                                 </div>
                             )}
-
                         </div>
                     </div>
 
 
                     {/* ── Fee Wallets ────────────────────────── */}
                     {result.feeWallets.length > 0 ? (
-                        <div className="glass-card p-6">
+                        <div className="glass-card p-6 my-4">
                             <h3
                                 className="text-sm font-semibold mb-4 flex items-center gap-2"
                                 style={{ color: "var(--text-secondary)" }}

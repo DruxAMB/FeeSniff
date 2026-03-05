@@ -201,7 +201,7 @@ export default function Home() {
       <footer className="mt-8 text-center space-y-2 opacity-40 hover:opacity-100 transition-opacity">
 
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          built with love by{" "}
+          built with love for free by{" "}
           <a
             href="https://druxamb.dev/contact"
             target="_blank"
