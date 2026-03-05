@@ -21,6 +21,7 @@ export const CLAIM_CONTRACT_ABI = [
   "function dailyReward() view returns (uint256)",
   "function contractBalance() view returns (uint256)",
   "function totalDistributed() view returns (uint256)",
+  "function streakWindow() view returns (uint256)",
   "function totalClaimers() view returns (uint256)",
   "function getMultiplier(uint256 currentStreak) pure returns (uint256)",
   "function getRewardForStreak(uint256 currentStreak) view returns (uint256)",

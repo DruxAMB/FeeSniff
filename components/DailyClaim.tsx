@@ -22,6 +22,7 @@ type ClaimState = {
     isPaused: boolean;
     shields: number;
     shieldPrice: string;
+    isStreakExpired: boolean;
 };
 
 type TxStatus = "idle" | "pending" | "confirming" | "success" | "error";
@@ -93,19 +94,39 @@ export default function ClaimModal({
                     isPaused,
                     shields: 0,
                     shieldPrice: "400",
+                    isStreakExpired: false,
                 });
                 setLoading(false);
                 return;
             }
 
-            const [canClaim, timeLeft, streak, nextReward, shieldCount, price] = await Promise.all([
-                contract.canClaim(address),
-                contract.timeUntilNextClaim(address),
-                contract.currentStreak(address),
-                contract.nextReward(address),
-                contract.shields(address),
-                contract.shieldPrice(),
-            ]);
+            let canClaim = false;
+            let timeLeft = 0n;
+            let streak = 0n;
+            let nextReward = 0n;
+            let shieldCount = 0n;
+            let price = ethers.parseUnits("400", SNIFF_DECIMALS);
+            let lastClaimedTime = 0n;
+            let win = 172800n; // 2 days
+
+            try {
+                const results = await Promise.all([
+                    contract.canClaim(address).catch(() => false),
+                    contract.timeUntilNextClaim(address).catch(() => 0n),
+                    contract.currentStreak(address).catch(() => 0n),
+                    contract.nextReward(address).catch(() => 0n),
+                    contract.shields(address).catch(() => 0n),
+                    contract.shieldPrice().catch(() => ethers.parseUnits("400", SNIFF_DECIMALS)),
+                    contract.lastClaimed(address).catch(() => 0n),
+                    contract.streakWindow().catch(() => 172800n),
+                ]);
+                [canClaim, timeLeft, streak, nextReward, shieldCount, price, lastClaimedTime, win] = results;
+            } catch (err) {
+                console.error("Contract call failed:", err);
+            }
+
+            const now = Math.floor(Date.now() / 1000);
+            const isExpired = lastClaimedTime > 0 && now > Number(lastClaimedTime) + Number(win);
 
             setClaimState({
                 canClaim,
@@ -115,9 +136,23 @@ export default function ClaimModal({
                 isPaused,
                 shields: Number(shieldCount),
                 shieldPrice: formatSniff(price),
+                isStreakExpired: isExpired,
             });
         } catch (err) {
             console.error("Failed to fetch claim data:", err);
+            // Ensure we have a valid state instead of null if it crashes
+            if (!claimState) {
+                setClaimState({
+                    canClaim: false,
+                    timeLeft: 0,
+                    streak: 0,
+                    nextReward: "100",
+                    isPaused: false,
+                    shields: 0,
+                    shieldPrice: "400",
+                    isStreakExpired: false,
+                });
+            }
         } finally {
             setLoading(false);
         }
@@ -306,12 +341,12 @@ export default function ClaimModal({
                                 </div>
                             </div>
 
-                            <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/20 mb-auto">
+                            <div className="bg-black/5 dark:bg-white/5 p-3 rounded-xl border border-[var(--border-subtle)] mb-auto">
                                 <div className="flex items-center gap-2 mb-1">
-                                    <Shield className="w-4 h-4 text-blue-500" />
-                                    <span className="text-xs font-bold text-blue-500 uppercase">Streak Shield</span>
+                                    <Shield className="w-4 h-4" style={{ color: "var(--text-primary)" }} />
+                                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-primary)" }}>Streak Shield</span>
                                 </div>
-                                <p className="text-[10px] text-blue-500/80 leading-relaxed">
+                                <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
                                     Shield protects your streak for 1 missed day!
                                 </p>
                             </div>
@@ -379,8 +414,11 @@ export default function ClaimModal({
 
                                 {/* Shield Badge */}
                                 {isConnected && claimState && (
-                                    <div className="absolute -top-1 -right-1 z-20 flex items-center gap-1.5 bg-blue-500 text-white px-2.5 py-1.5 rounded-full shadow-lg border-2 border-[var(--bg-primary)]">
-                                        <Shield className="w-3.5 h-3.5 fill-white" />
+                                    <div
+                                        className="absolute -top-1 -right-1 z-20 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full shadow-lg border-2"
+                                        style={{ background: "var(--text-primary)", color: "var(--bg-primary)", borderColor: "var(--bg-primary)" }}
+                                    >
+                                        <Shield className="w-3.5 h-3.5 fill-current" />
                                         <span className="text-[10px] font-bold">{claimState.shields}</span>
                                     </div>
                                 )}
@@ -401,31 +439,35 @@ export default function ClaimModal({
                                 </p>
                             </div>
 
-                            {/* Streak Shield Purchase Section */}
-                            {isConnected && claimState && (
+                            {/* Streak Shield Purchase Section - Only show if streak is at risk (expired window) */}
+                            {isConnected && claimState && claimState.isStreakExpired && (
                                 <div className="w-full mb-6 px-4">
                                     <button
                                         onClick={handleBuyShield}
                                         disabled={isBuyingShield || txStatus === "pending" || txStatus === "confirming"}
-                                        className="w-full group relative flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-[var(--border-subtle)] hover:bg-black/10 dark:hover:bg-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+                                        className="w-full group relative items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-(--border-subtle) hover:bg-black/10 dark:hover:bg-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="p-2 rounded-lg bg-black/5 dark:bg-white/10" style={{ color: "var(--text-primary)" }}>
                                                 <Shield className="w-4 h-4" />
                                             </div>
                                             <div className="text-left">
-                                                <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Streak Shield</p>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-primary)" }}>Streak Shield</p>
                                                 <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Protect for 1 missed day</p>
                                             </div>
                                         </div>
-                                        <div className="bg-blue-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl">
+                                        <div
+                                            className="text-[10px] font-bold px-3 py-1.5 rounded-xl transition-colors"
+                                            style={{ background: "var(--text-primary)", color: "var(--bg-primary)" }}
+                                        >
                                             {isBuyingShield ? "BUYING..." : `${claimState.shieldPrice} $SNIFF`}
                                         </div>
 
                                         {/* Progress Bar for purchase */}
                                         {isBuyingShield && (
                                             <motion.div
-                                                className="absolute bottom-0 left-0 h-0.5 bg-blue-500"
+                                                className="absolute bottom-0 left-0 h-0.5"
+                                                style={{ background: "var(--text-primary)" }}
                                                 initial={{ width: 0 }}
                                                 animate={{ width: "100%" }}
                                                 transition={{ duration: 20 }}
