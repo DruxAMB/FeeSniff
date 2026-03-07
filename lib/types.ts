@@ -50,6 +50,7 @@ export type TokenInfo = {
   name: string;
   symbol: string;
   totalSupply: string;
+  totalSupplyRaw: string;
   owner: string;
   deployedAt?: string;
   deployer?: string;
@@ -70,6 +71,32 @@ export type AnalysisResult = {
   poolName?: string;
   platform?: "clanker" | "wow" | "bankr" | "generic";
   subPlatform?: string;
+  securityRisk?: SecurityRisk;
+};
+
+export type SecurityRisk = {
+  score: number; // 0-100
+  riskLevel: "Low" | "Medium" | "High" | "Critical";
+  isRenounced: boolean;
+  isVerified: boolean;
+  isMintable: boolean;
+  top10Concentration: number;
+  isLiquidityLocked: boolean;
+  liquidityLockedPercent: number;
+  devHoldingPercent: number;
+  riskFlags: {
+    type: "success" | "warning" | "danger" | "info";
+    message: string;
+  }[];
+  topHolders: HolderInfo[];
+};
+
+export type HolderInfo = {
+  address: string;
+  count: string;
+  percent: number;
+  isContract: boolean;
+  label?: string;
 };
 
 export type AnalysisError = {

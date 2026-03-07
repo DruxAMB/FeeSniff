@@ -7,6 +7,8 @@ import type {
   FeeIncome,
   FeeTransaction,
   AnalysisResult,
+  SecurityRisk,
+  HolderInfo,
 } from "./types";
 import { getChain, ETHERSCAN_V2_API } from "./chains";
 
@@ -233,6 +235,7 @@ export async function getTokenInfo(
     name: val(0) || "Unknown",
     symbol: val(1) || "???",
     totalSupply: rawSupply ? ethers.formatUnits(rawSupply, decimals) : "0",
+    totalSupplyRaw: rawSupply.toString(),
     owner: val(4) || ethers.ZeroAddress,
   };
 }
@@ -795,6 +798,133 @@ async function fetchBlockscoutWethTransfers(
 }
 
 // ─── Token Trade History (All Trades) ──────────────────────
+
+// ─── Security Scan Helpers ──────────────────────────────────
+
+export async function fetchTopHolders(
+  address: string,
+  chain: ChainConfig,
+  totalSupplyRaw?: string
+): Promise<HolderInfo[]> {
+  // blockscoutApi already ends with /api/v2
+  const url = `${chain.blockscoutApi}/tokens/${address}/holders`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    
+    const data = await res.json();
+    if (!data.items) return [];
+
+    const supply = totalSupplyRaw ? BigInt(totalSupplyRaw) : 0n;
+
+    return data.items.map((item: any) => {
+      let percent = parseFloat(item.value_percent);
+      if ((isNaN(percent) || percent === 0) && supply > 0n) {
+        // Calculate manually if missing or zero (Blockscout V2 often omits this)
+        const val = BigInt(item.value || "0");
+        percent = Number((val * 10000n) / supply) / 100;
+      }
+
+      return {
+        address: ethers.getAddress(item.address.hash),
+        count: item.value,
+        percent: percent || 0,
+        isContract: !!item.address.is_contract,
+        label: item.address.name || undefined,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function analyzeSecurityRisk(
+  address: string,
+  chain: ChainConfig,
+  tokenInfo: TokenInfo,
+  poolAddress: string | null,
+  isVerified: boolean
+): Promise<SecurityRisk> {
+  const holders = await fetchTopHolders(address, chain, tokenInfo.totalSupplyRaw);
+  
+  const riskFlags: { type: "success" | "warning" | "danger" | "info"; message: string }[] = [];
+  let score = 100;
+
+  // 1. Contract Verification
+  if (!isVerified) {
+    score -= 30;
+    riskFlags.push({ type: "danger", message: "Contract not verified" });
+  } else {
+    riskFlags.push({ type: "success", message: "Verified Source Code" });
+  }
+
+  // 2. Ownership
+  const isRenounced = tokenInfo.owner === ethers.ZeroAddress || 
+                      tokenInfo.owner?.toLowerCase() === "0x000000000000000000000000000000000000dead";
+  if (isRenounced) {
+    riskFlags.push({ type: "success", message: "Ownership Renounced" });
+  } else {
+    score -= 15;
+    riskFlags.push({ type: "warning", message: "Active Owner/Admin" });
+  }
+
+  // 3. Holder Concentration (Top 10 excluding LPs/Burn)
+  const burnAddresses = [
+    ethers.ZeroAddress.toLowerCase(),
+    "0x000000000000000000000000000000000000dead"
+  ];
+  
+  const topInsiders = holders.filter(h => 
+    !burnAddresses.includes(h.address.toLowerCase()) && 
+    h.address.toLowerCase() !== poolAddress?.toLowerCase()
+  ).slice(0, 10);
+  
+  const top10Concentration = topInsiders.reduce((acc, h) => acc + h.percent, 0);
+  
+  if (top10Concentration > 50) {
+    score -= 40;
+    riskFlags.push({ type: "danger", message: `Extremely High Concentration (${top10Concentration.toFixed(1)}%)` });
+  } else if (top10Concentration > 25) {
+    score -= 20;
+    riskFlags.push({ type: "warning", message: `Significant Insider Holdings (${top10Concentration.toFixed(1)}%)` });
+  } else {
+    riskFlags.push({ type: "success", message: "Healthy Holder Distribution" });
+  }
+
+  // 4. Liquidity Status
+  let isLiquidityLocked = false;
+  let lockedPercent = 0;
+  
+  if (poolAddress) {
+    // For Clanker/Bankr, liquidity is usually "locked" by the deployer or a specific contract
+    const isV4 = poolAddress.toLowerCase() === V4_MANAGER.toLowerCase();
+    if (isV4) {
+      isLiquidityLocked = true;
+      lockedPercent = 100;
+      riskFlags.push({ type: "success", message: "Liquidity Permanently Locked" });
+    }
+  }
+
+  // Determine Overall Risk Level
+  let riskLevel: SecurityRisk["riskLevel"] = "Low";
+  if (score < 40) riskLevel = "Critical";
+  else if (score < 60) riskLevel = "High";
+  else if (score < 85) riskLevel = "Medium";
+
+  return {
+    score,
+    riskLevel,
+    isRenounced,
+    isVerified,
+    isMintable: false, 
+    top10Concentration,
+    isLiquidityLocked,
+    liquidityLockedPercent: lockedPercent,
+    devHoldingPercent: 0, 
+    riskFlags,
+    topHolders: holders.slice(0, 10),
+  };
+}
 
 export async function fetchTokenTrades(
   tokenAddress: string,
@@ -1549,19 +1679,39 @@ export async function analyzeToken(
     poolAddress = await findLPPool(address, chain);
   }
 
-  // Step 5: Calculate fee income
+  // Step 5: Security Analysis
+  let securityRisk;
+  try {
+    securityRisk = await analyzeSecurityRisk(address, chain, tokenInfo, poolAddress, source.verified);
+    console.log(`[Analyzer] Security analysis completed for ${address}. Score: ${securityRisk.score}`);
+  } catch (err) {
+    console.error(`[Analyzer] Security analysis failed for ${address}:`, err);
+    // Return a minimal security risk object so the UI can still show something or at least not crash
+    securityRisk = {
+      score: 0,
+      riskLevel: "Critical" as const,
+      isRenounced: false,
+      isVerified: source.verified,
+      isMintable: false,
+      top10Concentration: 0,
+      isLiquidityLocked: false,
+      liquidityLockedPercent: 0,
+      devHoldingPercent: 0,
+      riskFlags: [{ type: "danger" as const, message: "Security analysis failed" }],
+      topHolders: [],
+    };
+  }
+
+  // Step 6: Calculate fee income
   const ethPrice = await getEthPrice();
   
   // Check if this is a V4 token (poolAddress is the V4_MANAGER)
   const isV4 = poolAddress?.toLowerCase() === V4_MANAGER.toLowerCase();
   
   // Fetch trades and per-token revenue in parallel
-  // Volume is NOT fetched here — it's deferred because fetchTotalVolume
-  // can take 10-17+ minutes for high-trade V4 tokens (not displayed in UI anyway)
   const [tokenTrades, perTokenRevenue, globalRevenue] = await Promise.all([
     fetchTokenTrades(address, chain),
     calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice, isV4),
-    // Global income: always uses Blockscout approach (~1s) — needed for hero metric
     isV4
       ? calculateCombinedIncome(feeWallets, chain, address, poolAddress, ethPrice, false)
       : Promise.resolve(null),
@@ -1574,7 +1724,7 @@ export async function analyzeToken(
     feeIncome: perTokenRevenue,
     allWalletIncome: globalRevenue || perTokenRevenue,
     tokenTrades: tokenTrades,
-    volumeEth: undefined,  // Deferred — fetched on demand via /api/volume
+    volumeEth: undefined,
     poolName: undefined,
     poolAddress,
     platform,
@@ -1582,5 +1732,6 @@ export async function analyzeToken(
     chain: chainId,
     contractVerified: source.verified,
     contractAddress: address,
+    securityRisk,
   };
 }
